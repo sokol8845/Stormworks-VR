@@ -7,6 +7,9 @@ namespace swvr::game_profile {
 // Static analysis of Steam build 26294447. All native offsets require BOTH
 // this file hash and the code prefix to match. No fallback to guessed offsets.
 inline constexpr char sha256[]="c38c03ff756b4f42bbc9f11cdbb034977ad0f968e45741c5cf410732f22a338d";
+// Measured C+2A0 -> atan2(look[8],look[10]) sign for this EXE, also confirmed
+// by the live observer in headset-xr-20261106-200021-563. Revalidate on port.
+inline constexpr int look_yaw_sign=1;
 inline constexpr std::uintptr_t camera_update_rva=0x194680;
 inline constexpr std::uintptr_t renderer_rva=0x6d4de0;
 inline constexpr std::uintptr_t render_counter_rva=0xcfd3c4;

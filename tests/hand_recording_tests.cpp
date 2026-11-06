@@ -22,19 +22,20 @@ HandRecordingSample sample(unsigned id,float gap,float forward=0){
 }
 int main(int argc,char** argv){try{
     check(argc==2,"project temporary directory required");GestureSettings legacy;legacy.joystick.activation=JoystickActivation::middle_pinch;legacy.arm_swing.activation=RunActivation::alternating;auto settings=legacy;settings.joystick.dead_zone_m=.031234567f;
+    settings.joystick.forward_only=true;
     auto original=sample(1,.06f);original.frame.eyes[0].texture=999;
     original.frame.hands[1].joints[25].pose.position.x=std::bit_cast<float>(std::uint32_t{0x7fc01234});
     original.frame.hands[1].joints[24].pose.position.y=-0.f;
     std::stringstream buffer;write_hand_recording_header(buffer);write_hand_configuration(buffer,settings,LocomotionMode::joystick);write_hand_sample(buffer,original);buffer<<"END\n";
     read_hand_recording_header(buffer);const auto configuration=read_hand_record(buffer);
-    check(configuration.settings.joystick.dead_zone_m==settings.joystick.dead_zone_m,"configuration precision lost");
+    check(configuration.settings==settings,"configuration precision/forward-only preference lost");
     const auto record=read_hand_record(buffer);const auto& copy=record.sample;
     check(copy.elapsed_ns==original.elapsed_ns&&copy.frame.space_revision==7&&copy.walking_allowed&&copy.frame.eyes[0].texture==0,"sample identity or borrowed GL lifetime serialized incorrectly");
     check(std::bit_cast<std::uint32_t>(copy.frame.hands[1].joints[25].pose.position.x)==0x7fc01234&&std::bit_cast<std::uint32_t>(copy.frame.hands[1].joints[24].pose.position.y)==0x80000000,"invalid/untracked float bits not preserved");
     check(read_hand_record(buffer).kind==HandRecordKind::end,"END missing");
     for(unsigned version:{1u,2u,3u}){std::stringstream old;write_hand_recording_header(old,version);if(version>=2)old<<"Q 1 0 0\n";old<<"C joystick\n[joystick]\n[arm_swing]\nEND_CONFIG\nEND\n";
         read_hand_recording_header(old);const auto c=read_hand_record(old);
-        check(c.settings.joystick.activation==(version<3?JoystickActivation::middle_pinch:JoystickActivation::whole_hand)&&c.settings.arm_swing.activation==(version<3?RunActivation::alternating:RunActivation::two_fists),"recording schema changed historical activation semantics");}
+        check(!c.settings.joystick.forward_only&&c.settings.joystick.activation==(version<3?JoystickActivation::middle_pinch:JoystickActivation::whole_hand)&&c.settings.arm_swing.activation==(version<3?RunActivation::alternating:RunActivation::two_fists),"recording schema changed historical activation semantics");}
     for(const char* invalid:{"SWVR_HANDS 9\n","SWVR_HANDS 1"})rejects([&]{std::istringstream in(invalid);read_hand_recording_header(in);});
     for(const char* invalid:{"F 1 0\n","C invalid\n","C joystick\n[joystick]\nwat=5\nEND_CONFIG\n","END\ntrailing\n",""})rejects([&]{std::istringstream in(invalid);read_hand_record(in);});
     std::stringstream replay;write_hand_recording_header(replay);write_hand_configuration(replay,legacy,LocomotionMode::joystick);

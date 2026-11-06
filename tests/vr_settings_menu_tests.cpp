@@ -15,7 +15,12 @@ struct Fixture {
 };
 int main(){try{
     Fixture f;check(f.click(VrMenuAction::arm_swing)==VrMenuAction::arm_swing&&f.menu.snapshot().visible,"mode action closed menu or was not delivered");
+    check(!f.click(VrMenuAction::movement_page)&&f.menu.snapshot().title=="CHODZENIE","movement page did not open");
     check(f.click(VrMenuAction::joystick_right,0)==VrMenuAction::joystick_right,"left hand could not operate settings");
+    GestureSettings walking;const auto forward=f.click(VrMenuAction::forward_only_toggle);check(forward&&adjust_vr_preferences(*forward,walking)&&walking.joystick.forward_only,"forward-only switch missing");
+    f.menu.status(walking,false);check(f.menu.snapshot().value.find("TYLKO PRZOD: WL")!=std::string::npos&&f.menu.snapshot().value.find("OBROT P")!=std::string::npos,"walking mode/turn hand not shown");
+    const auto full=f.click(VrMenuAction::forward_only_toggle);check(full&&adjust_vr_preferences(*full,walking)&&!walking.joystick.forward_only,"forward-only switch did not turn off");
+    check(!f.click(VrMenuAction::back)&&f.menu.snapshot().title=="USTAWIENIA VR","movement back missing");
     check(!f.click(VrMenuAction::clear_profile)&&f.menu.snapshot().title=="USUNAC KALIBRACJE?","profile deletion skipped confirmation");
     check(f.click(VrMenuAction::clear_profile)==VrMenuAction::clear_profile&&!f.menu.snapshot().visible,"confirmed deletion not delivered once");
     Fixture preferences;check(!preferences.click(VrMenuAction::controls)&&preferences.menu.snapshot().title=="OBROT I MENU","controls page did not open");
@@ -30,7 +35,7 @@ int main(){try{
     check(!preferences.click(VrMenuAction::controls),"comfort back emitted external action");
     check(!preferences.click(VrMenuAction::back)&&preferences.menu.snapshot().title=="USTAWIENIA VR","back did not restore main menu");
     Fixture calibration;check(calibration.click(VrMenuAction::calibrate)==VrMenuAction::calibrate&&!calibration.menu.snapshot().visible,"guided calibration did not dismiss panel");
-    Fixture disabled;disabled.menu.open(disabled.frame,{false,false,true},{},false);check(!disabled.click(VrMenuAction::arm_swing)&&!disabled.click(VrMenuAction::calibrate),"disabled action accepted");
+    Fixture disabled;disabled.menu.open(disabled.frame,{false,false,true},{},false);check(!disabled.click(VrMenuAction::arm_swing)&&!disabled.click(VrMenuAction::calibrate)&&!disabled.click(VrMenuAction::movement_page),"disabled action accepted");
     Fixture gesture;VrMenuSummon summon;gesture.pose(true);for(int i=0;i<60;++i)check(!gesture.summon(summon),"raised palms opened the application menu");
     gesture.pose(false);gesture.summon(summon);gesture.pose(true);for(int i=0;i<70;++i)check(!gesture.summon(summon),"legacy near-face pose conflicts with Quest system input");
     gesture.pose(false);gesture.summon(summon);gesture.pose(true,false);for(int i=0;i<70;++i)check(!gesture.summon(summon),"fists summoned menu");

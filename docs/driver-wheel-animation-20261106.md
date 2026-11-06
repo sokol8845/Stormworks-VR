@@ -1,5 +1,8 @@
 # Animacja kierownicy Driver seat — 2026-11-06
 
+**Potwierdzenie:** w próbie `headset-xr-20261106-200021-563` użytkownik
+potwierdził działanie kierownicy. [Wynik próby i dalsze poprawki](forward-only-and-heading-20261106.md).
+
 Dodano obrót widocznej obręczy, trzech szprych i piasty standardowego
 **Driver seat** zgodnie z kątem dłoni. Dotychczas działał sygnał skrętu kół,
 ale geometria fotela pozostawała statyczna. Animacja włącza się automatycznie
@@ -78,7 +81,7 @@ Powtórzenie testu z lokalnymi zasobami (gra pozostaje zamknięta):
 ./build/capture/Release/swvr_driver_wheel_gl_tests.exe 'C:/Program Files (x86)/Steam/steamapps/common/Stormworks/rom'
 ```
 
-Wdrożenie i testy offline zakończone. **Obraz podczas rzeczywistej jazdy
-w goglach wymaga potwierdzenia**: chwycić oburącz Driver seat, skręcić
+Wdrożenie i testy offline zakończone; działanie animacji następnie
+potwierdzono w goglach. Lista do dalszych prób: chwycić oburącz Driver seat, skręcić
 w obie strony, puścić jedną i obie dłonie, powtórzyć podczas jazdy oraz
 po wyjściu i wejściu do fotela. Sprawdzić też pobliski pusty fotel.

@@ -14,17 +14,20 @@ double wrap_pi(double radians) noexcept;
 
 // Identifies how the native yaw field maps to the look matrix yaw:
 // look_yaw == sign * field + offset (offset 0 or pi). Locks after `needed`
-// consecutive agreeing frames with a well-conditioned angle; never guesses.
+// consecutive agreeing frames. A SHA-verified native sign can disambiguate
+// straight-ahead startup; otherwise waits for a well-conditioned angle.
 class LookYawCalibration {
 public:
-    explicit LookYawCalibration(unsigned needed=10) noexcept : needed_(needed) {}
+    explicit LookYawCalibration(unsigned needed=10,int verified_sign=0) noexcept
+        : needed_(needed),verified_sign_(verified_sign==1||verified_sign==-1?verified_sign:0) {}
     void observe(float field_radians,const Matrix4d& look) noexcept;
     bool locked() const noexcept {return locked_;}
     int sign() const noexcept {return sign_;}
     double offset() const noexcept {return offset_;}
-    void reset() noexcept {*this=LookYawCalibration(needed_);}
+    void reset() noexcept {*this=LookYawCalibration(needed_,verified_sign_);}
 private:
     unsigned needed_{},agree_{};
+    int verified_sign_{};
     int sign_{},candidate_sign_{};
     double offset_{},candidate_offset_{};
     bool locked_{};

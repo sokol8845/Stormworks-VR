@@ -81,9 +81,9 @@ GestureSettings parse_gesture_settings(std::string_view text,GestureSettings s) 
             const auto eq=value.find('=');require(eq!=value.npos,"Expected key=value");
             const auto key=section+"."+std::string(trim(value.substr(0,eq)));value=trim(value.substr(eq+1));
             require(seen.insert(key).second,"Duplicate setting");
-            if(key=="input.click_sound"||key=="turn.snap"||key=="comfort.head_fade"||key=="comfort.seated"){
+            if(key=="joystick.forward_only"||key=="input.click_sound"||key=="turn.snap"||key=="comfort.head_fade"||key=="comfort.seated"){
                 require(value=="true"||value=="false","Expected true or false");
-                if(key=="input.click_sound")s.input.click_sound=value=="true";else if(key=="turn.snap")s.turn.snap=value=="true";else if(key=="comfort.head_fade")s.comfort.head_fade=value=="true";else s.comfort.seated=value=="true";
+                if(key=="joystick.forward_only")j.forward_only=value=="true";else if(key=="input.click_sound")s.input.click_sound=value=="true";else if(key=="turn.snap")s.turn.snap=value=="true";else if(key=="comfort.head_fade")s.comfort.head_fade=value=="true";else s.comfort.seated=value=="true";
             }else if(key=="input.movement_mode"){
                 require(value=="fists"||value=="joystick","Unknown movement mode");s.input.movement_fists=value=="fists";
             }else if(key=="joystick.activation"){
@@ -113,7 +113,7 @@ GestureSettings load_gesture_settings(const std::filesystem::path& path) {
 }
 std::string describe_gesture_settings(const GestureSettings& s) {
     std::ostringstream out;out.imbue(std::locale::classic());out.precision(std::numeric_limits<float>::max_digits10);const auto& j=s.joystick;const auto& a=s.arm_swing;
-    out<<"joystick_activation="<<(j.activation==JoystickActivation::whole_hand?"whole_hand":"middle_pinch")<<" dead_zone_m="<<j.dead_zone_m<<" full_deflection_m="<<j.full_deflection_m<<" sprint_on_m="<<j.sprint_on_m<<" sprint_off_m="<<j.sprint_off_m
+    out<<"joystick_activation="<<(j.activation==JoystickActivation::whole_hand?"whole_hand":"middle_pinch")<<" joystick_forward_only="<<(j.forward_only?"true":"false")<<" dead_zone_m="<<j.dead_zone_m<<" full_deflection_m="<<j.full_deflection_m<<" sprint_on_m="<<j.sprint_on_m<<" sprint_off_m="<<j.sprint_off_m
        <<" pinch_press_m="<<j.pinch_press_m<<" pinch_release_m="<<j.pinch_release_m<<" run_activation="<<(a.activation==RunActivation::two_fists?"two_fists":"alternating")<<" stroke_m="<<a.stroke_m<<" minimum_speed_mps="<<a.minimum_speed_mps
        <<" maximum_speed_mps="<<a.maximum_speed_mps<<" start_half_strokes="<<a.start_half_strokes<<" minimum_half_stroke_ms="<<a.minimum_half_stroke_ms
        <<" maximum_half_stroke_ms="<<a.maximum_half_stroke_ms<<" stop_delay_ms="<<a.stop_delay_ms<<" fist_close_wrist_ratio="<<a.fist_close_wrist_ratio
@@ -132,6 +132,7 @@ std::string format_gesture_settings_ini(const GestureSettings& s){
         if(field.starts_with("comfort_head_fade="))out<<"[comfort]\n";
         if(field.starts_with("comfort_")){out<<field.substr(8)<<'\n';continue;}
         if(field.starts_with("joystick_activation=")){out<<"activation="<<field.substr(20)<<'\n';continue;}
+        if(field.starts_with("joystick_forward_only=")){out<<"forward_only="<<field.substr(22)<<'\n';continue;}
         if(field.starts_with("joystick_hand="))out<<"[input]\n";out<<field<<'\n';}return out.str();
 }
 void save_gesture_settings(const std::filesystem::path& path,const GestureSettings& settings){

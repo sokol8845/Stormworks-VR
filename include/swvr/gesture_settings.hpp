@@ -15,6 +15,7 @@ struct JoystickSettings {
     JoystickActivation activation{JoystickActivation::whole_hand};
     float dead_zone_m{.03f},full_deflection_m{.12f},sprint_on_m{.12f},sprint_off_m{.09f};
     float pinch_press_m{.025f},pinch_release_m{.040f};
+    bool forward_only{};
 };
 struct ArmSwingSettings {
     bool operator==(const ArmSwingSettings&)const=default;

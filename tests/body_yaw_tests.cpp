@@ -1,7 +1,9 @@
 #include "swvr/body_yaw.hpp"
+#include "swvr/game_profile.hpp"
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 
 namespace {
 using namespace swvr;
@@ -15,7 +17,26 @@ Matrix4d camera(double yaw,double pitch=0,double x=0){
     return m;
 }
 }
-int main(){try{
+int main(int argc,char** argv){try{
+    // At startup the native look is straight ahead. A calibrated HMD looking
+    // 15 degrees sideways must align the walking body without a mouse nudge.
+    {const float initial=argc>1?std::stof(argv[1]):0.f;
+        LookYawCalibration c{10,game_profile::look_yaw_sign};for(int i=0;i<20;++i)c.observe(initial,camera(initial));
+        const double head=15*pi/180;
+        const auto step=follow_headset_yaw_turning(initial,initial,c,camera(initial+head),camera(initial));
+        require(std::abs(wrap_pi(step.field-initial-head))<1e-5,"startup: head/body remain 15 degrees apart until mouse movement");
+        const auto next=follow_headset_yaw_turning(step.field,step.field,c,camera(initial+head),camera(step.field));
+        require(next.field==step.field&&next.turn==0,"startup alignment was undone on the following frame");}
+    for(int sign:{1,-1})for(double offset:{0.,pi})for(double field:{0.,pi/2,-pi/2,pi,-pi}){
+        LookYawCalibration c{5,sign};for(int i=0;i<4;++i)c.observe(static_cast<float>(field),camera(sign*field+offset));
+        require(!c.locked(),"verified sign skipped live look validation window");c.observe(static_cast<float>(field),camera(sign*field+offset));
+        require(c.locked()&&c.sign()==sign&&std::abs(wrap_pi(c.offset()-offset))<1e-6,"verified startup mapping did not lock");
+        c.reset();require(!c.locked(),"reset retained calibration");for(int i=0;i<5;++i)c.observe(static_cast<float>(field),camera(sign*field+offset));
+        require(c.locked(),"reset lost verified sign");
+    }
+    {LookYawCalibration c{3,1};for(int i=0;i<20;++i)c.observe(.6f,camera(-.6));require(!c.locked(),"mismatched live look accepted verified profile");}
+    {LookYawCalibration c{3,1};c.observe(0,camera(0));c.observe(0,camera(0));auto bad=camera(0);bad[8]=bad[10]=0;c.observe(0,bad);
+        c.observe(0,camera(0));require(!c.locked(),"invalid look did not reset consecutive window");}
     require(std::abs(game_camera_yaw(camera(.7))-.7)<1e-12&&std::abs(wrap_pi(3*pi/2)+pi/2)<1e-12&&std::abs(wrap_pi(-3*pi/2)-pi/2)<1e-12,"yaw helpers");
     // Identification for each mapping; pitch must not disturb it.
     for(int sign:{1,-1})for(double offset:{0.,pi}) {

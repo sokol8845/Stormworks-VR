@@ -19,6 +19,26 @@ XrRuntimeFrame hands(bool left_closed,bool right_closed){
     }return f;
 }
 int main(){unsigned failed{};const auto test=[&](const char* name,auto fn){try{fn();std::cout<<"PASS "<<name<<'\n';}catch(const std::exception& e){++failed;std::cerr<<"FAIL "<<name<<": "<<e.what()<<'\n';}};
+    test("forward-only fist joystick with independent turning",[]{for(auto selected:{GestureHand::left,GestureHand::right}){
+        HandLocomotion m;HandTurn turn;GestureSettings s;s.input.joystick_hand=selected;s.input.movement_fists=false;s.joystick.forward_only=true;m.configure(s);
+        const auto moving=static_cast<unsigned>(selected),turning=1u-moving;auto f=hands(true,true);auto now=HandLocomotion::Clock::time_point{};
+        auto tick=[&](float forward,float side,float rotate,bool allowed=true){
+            auto pose=hands(true,true);f.hands=pose.hands;for(auto& j:f.hands[moving].joints){j.pose.position.z-=forward;j.pose.position.x+=side;}
+            for(auto& j:f.hands[turning].joints)j.pose.position.x+=rotate;
+            ++f.id;f.predicted_display_time_ns+=20'000'000;now+=std::chrono::milliseconds(20);m.publish(f,allowed,now);return turn.update(f,s,allowed);};
+        tick(0,0,0);tick(0,0,0);
+        for(float side:{-.2f,0.f,.2f})for(float forward:{-.15f,0.f,.06f,.15f}){
+            check(tick(forward,side,.12f)>.02,"forward-only mode disabled opposite-hand turn");const auto c=m.inspect(now);const auto bits=locomotion_buttons(c);
+            check(c.active&&c.sideways==0&&c.forward>=0&&!(bits&(move_back|move_left|move_right)),"forward-only fist emitted reverse or strafe");
+            check((forward>0)==(c.forward>0),"forward push did not walk or pull moved backwards");check(c.sprint==(forward>=.12f),"sideways deflection incorrectly suppressed forward sprint");
+        }
+        f.hands[moving]=hands(false,false).hands[moving];++f.id;f.predicted_display_time_ns+=20'000'000;now+=std::chrono::milliseconds(20);m.publish(f,true,now);
+        check(!m.inspect(now).active,"opening forward-only grip kept walking");
+        tick(0,0,0);tick(.15f,0,.12f);check(m.inspect(now).sprint,"forward-only regrip failed");
+        f.focused=false;tick(.15f,0,.12f);check(!m.inspect(now).active&&!turn.using_hand(),"focus loss kept walking/turning");
+        f.focused=true;tick(0,0,0);tick(.15f,0,0);check(!m.inspect(now+std::chrono::milliseconds(101)).active,"stale forward-only input stayed active");
+        s.joystick.forward_only=false;m.configure(s);tick(0,0,0);tick(-.1f,.1f,0);check(locomotion_buttons(m.inspect(now))==(move_back|move_right),"switching off did not restore full joystick directions");
+    }});
     test("closed grip is not a system palm",[]{auto f=hands(true,true);for(auto& hand:f.hands){auto& palm=hand.joints[0];palm.pose.position=hand.joints[1].pose.position;palm.orientation_valid=palm.orientation_tracked=true;palm.pose.orientation={-.70710678f,0,0,.70710678f};}
         check(!suppress_system_hand_input(f)&&f.hands[0].active&&f.hands[1].active,"system fallback suppressed closed fists");});
     test("two stationary fists",[]{HandLocomotion m;m.set_mode(LocomotionMode::arm_swing);auto f=hands(true,true);auto now=HandLocomotion::Clock::time_point{};

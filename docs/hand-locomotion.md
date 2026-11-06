@@ -1,4 +1,4 @@
-# Sterowanie ruchem dłoni — aktualizacja 2026-11-05
+# Sterowanie ruchem dłoni — aktualizacja 2026-11-06
 
 Po próbie użytkownika uproszczono aktywację: żaden domyślny tryb ruchu
 nie wymaga szczypnięcia. Gra pozostaje zamknięta; poniższe zmiany sprawdzono
@@ -27,6 +27,13 @@ Wybierz **JOYSTICK** i zaciśnij wybraną dłoń (domyślnie lewą). To chwyta
 wirtualny joystick w bieżącej pozycji nadgarstka. Przesunięcie ponad 3 cm
 steruje przód/tył/boki; 12 cm do przodu włącza sprint, poniżej 9 cm go wyłącza.
 Otwarcie dłoni kończy ruch. Ponowne zaciśnięcie ustawia nowy punkt neutralny.
+
+W **MENU → CHODZENIE** wybierz `JOY LEWA` oraz **TYLKO PRZOD: WL / WYL**,
+aby lewa ręka poruszała postać wyłącznie do przodu. Cofnięcie ręki zatrzymuje
+ruch, a ruch boczny jest ignorowany. Prawa dłoń nadal obraca postać.
+Sprint działa przy większym wychyleniu do przodu. Wyłączenie przełącznika
+przywraca przód/tył/boki; ustawienie jest zapisywane między sesjami.
+[Szczegóły i poprawka początkowego dopasowania głowy do ciała](forward-only-and-heading-20261106.md).
 
 Kciuk może być odsunięty od palców; nie ma kontaktu kciuk–środkowy ani
 kciuk–wskazujący. Ta sama zasada działa dla lewej i prawej dłoni. Aktywny
@@ -88,6 +95,7 @@ W [`config/gestures.ini`](../config/gestures.ini):
 
 ```ini
 [joystick]
+forward_only=false
 activation=whole_hand
 [arm_swing]
 activation=two_fists

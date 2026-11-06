@@ -610,7 +610,8 @@ struct NativeVr {
         if(previous_eyes) {previous_eyes.reset();++history_resets;}
     }
     // Body yaw following (opt-in): mapping of the native yaw field and counters.
-    swvr::LookYawCalibration look_yaw{};
+    // NativeVr is created only after the full EXE SHA and camera hook guards.
+    swvr::LookYawCalibration look_yaw{10,swvr::game_profile::look_yaw_sign};
     bool has_previous_base{};
     std::uint64_t body_yaw_frames{},body_yaw_writes{};
     double body_yaw_total{};

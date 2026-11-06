@@ -13,8 +13,10 @@ W najnowszej próbie użytkownik potwierdził skręt kół i puszczanie chwytu.
 Naprawiono blokadę przycisków po OK klawiatury i dodano
 [animację modelu kierownicy Driver seat](docs/driver-wheel-animation-20261106.md).
 Aktualne testy offline: **56/56 CTest**, **51/51 Python**, **78 kontroli EXE**,
-w tym obrót geometrii prawdziwego fotela na GPU. Poprawka po OK i animacja
-podczas jazdy wymagają ponownej próby w goglach. Obsługa i ograniczenia są
+w tym obrót geometrii prawdziwego fotela na GPU. Użytkownik potwierdził potem
+działanie animacji kierownicy w goglach. Dodano też
+[przełącznik chodzenia tylko do przodu i poprawkę początkowego kierunku ciała](docs/forward-only-and-heading-20261106.md),
+sprawdzone offline. Obsługa i ograniczenia są
 na początku `docs/stan-pracy.md`. Starsze opisy poniżej są historyczne.
 Potwierdzono w goglach stereo bez mrugania, ruch ciała/rąk, przyciski,
 dźwignię typu 4 prawą dłonią oraz obrót podczas chodzenia. Najnowsze prace

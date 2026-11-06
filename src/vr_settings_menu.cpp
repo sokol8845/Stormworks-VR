@@ -9,7 +9,7 @@ std::vector<PanelButton> buttons(VrMenuCapabilities c){
     return {{id(VrMenuAction::joystick),"JOYSTICK",-.105f,.14f,.19f,.065f,c.locomotion},{id(VrMenuAction::arm_swing),"DWIE PIESCI",.105f,.14f,.19f,.065f,c.locomotion},
         {id(VrMenuAction::reload),"WCZYTAJ",-.105f,.06f,.19f,.065f,true},{id(VrMenuAction::controls),"OBROT / MENU",.105f,.06f,.19f,.065f,true},
         {id(VrMenuAction::calibrate),"KALIBRUJ",-.105f,-.02f,.19f,.065f,c.avatar},{id(VrMenuAction::clear_profile),"USUN PROFIL",.105f,-.02f,.19f,.065f,c.avatar},
-        {id(VrMenuAction::joystick_left),"JOY LEWA",-.105f,-.10f,.19f,.065f,true},{id(VrMenuAction::joystick_right),"JOY PRAWA",.105f,-.10f,.19f,.065f,true},
+        {id(VrMenuAction::movement_page),"CHODZENIE",0,-.10f,.40f,.065f,c.locomotion},
         {id(VrMenuAction::priority_left),"CEL LEWA",-.105f,-.18f,.19f,.065f,true},{id(VrMenuAction::priority_right),"CEL PRAWA",.105f,-.18f,.19f,.065f,true},
         {id(VrMenuAction::keypad),"KLAWIATURA",-.105f,-.26f,.19f,.06f,c.keypad},{id(VrMenuAction::close),"ZAMKNIJ",.105f,-.26f,.19f,.06f,true}};
 }
@@ -22,6 +22,8 @@ std::string_view help_description(VrMenuAction action)noexcept{switch(action){
     case VrMenuAction::keypad:return "WSKAZ KLAWIATURE POJAZDU I AKTYWUJ JAK PRZYCISK. PANEL VR WPISUJE LICZBY DO GRY.";
     case VrMenuAction::joystick_left:return "LEWA DLON STERUJE CHODZENIEM, PRAWA OBRACA W TRYBIE JOYSTICK.";
     case VrMenuAction::joystick_right:return "PRAWA DLON STERUJE CHODZENIEM, LEWA OBRACA W TRYBIE JOYSTICK.";
+    case VrMenuAction::movement_page:return "WYBOR DLONI JOYSTICKA I PRZELACZNIK CHODZENIA TYLKO DO PRZODU.";
+    case VrMenuAction::forward_only_toggle:return "JOYSTICK CHODZI TYLKO DO PRZODU. COFNIECIE DLONI ZATRZYMUJE. DRUGA DLON OBRACA.";
     case VrMenuAction::priority_left:return "LEWA DLON MA PIERWSZENSTWO, GDY OBIE WSKAZUJA PRZYCISKI.";
     case VrMenuAction::priority_right:return "PRAWA DLON MA PIERWSZENSTWO, GDY OBIE WSKAZUJA PRZYCISKI.";
     case VrMenuAction::close:return "ZAMYKA MENU. WYBRANY TRYB RUCHU ZNOW MOZE DZIALAC.";
@@ -64,9 +66,14 @@ std::vector<PanelButton> comfort_buttons(){const auto id=[](VrMenuAction a){retu
     {id(VrMenuAction::head_toggle),"GLOWA LIMIT / 1:1",0,-.10f,.40f,.065f},
     {id(VrMenuAction::seated_toggle),"SIEDZE / STOJE",-.105f,-.18f,.19f,.065f},{id(VrMenuAction::recenter),"USTAW SRODEK",.105f,-.18f,.19f,.065f},
     {id(VrMenuAction::controls),"WROC",0,-.26f,.40f,.06f}};}
+std::vector<PanelButton> movement_buttons(){const auto id=[](VrMenuAction a){return static_cast<int>(a);};return {
+    {id(VrMenuAction::joystick_left),"JOY LEWA",-.105f,.14f,.19f,.065f},{id(VrMenuAction::joystick_right),"JOY PRAWA",.105f,.14f,.19f,.065f},
+    {id(VrMenuAction::forward_only_toggle),"TYLKO PRZOD: WL / WYL",0,.06f,.40f,.065f},
+    {id(VrMenuAction::back),"WROC",0,-.26f,.40f,.06f}};}
 }
 std::string_view vr_menu_help(VrMenuAction action)noexcept{return help_description(action);}
 bool adjust_vr_preferences(VrMenuAction action,GestureSettings& s){switch(action){
+    case VrMenuAction::forward_only_toggle:s.joystick.forward_only=!s.joystick.forward_only;break;
     case VrMenuAction::turn_slower:s.turn.speed_degrees=std::max(15.f,s.turn.speed_degrees-15);break;
     case VrMenuAction::turn_faster:s.turn.speed_degrees=std::min(120.f,s.turn.speed_degrees+15);break;
     case VrMenuAction::turn_dead_less:s.turn.dead_zone_m=std::max(.005f,s.turn.dead_zone_m-.005f);break;
@@ -94,6 +101,7 @@ bool VrSettingsMenu::open(const XrRuntimeFrame& f,VrMenuCapabilities capabilitie
 }
 void VrSettingsMenu::status(const GestureSettings& settings,bool arms){settings_=settings;arms_=arms;options_.offset.z=-settings.input.menu_distance_m;options_.offset.y=settings.comfort.seated?-.12f:-.05f;options_.dwell_ms=settings.input.dwell_ms;options_.scale=settings.input.menu_scale;
     if(panel_.snapshot().visible)panel_.reconfigure(options_);
+    if(page_==4){panel_.set_value(std::string(settings.joystick.forward_only?"TYLKO PRZOD: WL":"TYLKO PRZOD: WYL")+" / JOY "+(settings.input.joystick_hand==GestureHand::left?"L / OBROT P":"P / OBROT L"));return;}
     if(page_==2){panel_.set_value("CZAS "+std::to_string(settings.input.dwell_ms)+" MS / SKALA "+std::to_string(static_cast<int>(std::lround(settings.input.menu_scale*100)))+"% / "+(settings.input.click_sound?"DZW WL":"DZW WYL"));return;}
     if(page_==3){panel_.set_value(std::string(settings.turn.snap?"SKOK ":"PLYNNY ")+(settings.turn.snap?std::to_string(settings.turn.snap_degrees):"")+" / W"+std::to_string(static_cast<int>(std::lround(settings.comfort.vignette_strength*100)))+" / "+(settings.comfort.head_fade?"1:1":"LIMIT")+" / "+(settings.comfort.seated?"SIEDZE":"STOJE"));return;}
     panel_.set_value(page_==1?std::to_string(static_cast<int>(std::lround(settings.turn.speed_degrees)))+" DEG/S  "+std::to_string(static_cast<int>(std::lround(settings.turn.dead_zone_m*1000)))+"/"+std::to_string(static_cast<int>(std::lround(settings.turn.full_deflection_m*1000)))+" MM  "+std::to_string(static_cast<int>(std::lround(settings.input.menu_distance_m*100)))+" CM":std::string(arms?"PIESCI":"JOYSTICK")+" / JOY "+(settings.input.joystick_hand==GestureHand::left?"L":"P")+" / CEL "+(settings.input.pointing_priority==GestureHand::left?"L":"P"));}
@@ -102,8 +110,8 @@ std::optional<VrMenuAction> VrSettingsMenu::update(const XrRuntimeFrame& f){
     clicked_=true;
     const auto action=static_cast<VrMenuAction>(*hit);
     if(action==VrMenuAction::help){help_mode_=!help_mode_;panel_.inspect_only(help_mode_,static_cast<int>(VrMenuAction::help));refresh_help();return {};}
-    if(action==VrMenuAction::controls||action==VrMenuAction::back||action==VrMenuAction::interface_page||action==VrMenuAction::comfort_page){page_=action==VrMenuAction::back?0:action==VrMenuAction::controls?1:action==VrMenuAction::interface_page?2:3;
-        panel_.open(f,with_help(page_==0?buttons(capabilities_):page_==1?controls():page_==2?interface_buttons():comfort_buttons()),page_==0?"USTAWIENIA VR":page_==1?"OBROT I MENU":page_==2?"INTERFEJS":"KOMFORT",options_);status(settings_,arms_);return {};}
+    if(action==VrMenuAction::controls||action==VrMenuAction::back||action==VrMenuAction::interface_page||action==VrMenuAction::comfort_page||action==VrMenuAction::movement_page){page_=action==VrMenuAction::back?0:action==VrMenuAction::controls?1:action==VrMenuAction::interface_page?2:action==VrMenuAction::comfort_page?3:4;
+        panel_.open(f,with_help(page_==0?buttons(capabilities_):page_==1?controls():page_==2?interface_buttons():page_==3?comfort_buttons():movement_buttons()),page_==0?"USTAWIENIA VR":page_==1?"OBROT I MENU":page_==2?"INTERFEJS":page_==3?"KOMFORT":"CHODZENIE",options_);status(settings_,arms_);return {};}
     if(confirm_clear_){
         if(action==VrMenuAction::clear_profile){cancel();return action;}
         panel_.open(f,with_help(buttons(capabilities_)),"USTAWIENIA VR",options_);confirm_clear_=false;return {};

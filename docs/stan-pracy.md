@@ -1,5 +1,24 @@
 # Stan pracy — Stormworks VR (2026-11-06)
 
+## Po próbie 20:00: kierownica działa, dodano ruch tylko do przodu
+
+Użytkownik potwierdził działanie animacji Driver seat. Grę zamknięto na
+jego prośbę po pełnym zwolnieniu wejścia. Zapisano 22430 par obrazów,
+3 zatwierdzenia klawiatury i brak błędów natywnych adapterów.
+
+Dodano **MENU → CHODZENIE → TYLKO PRZOD: WL / WYL**: przy `JOY LEWA`
+lewa ręka steruje wyłącznie chodzeniem/sprintem do przodu, prawa obrotem.
+Cofnięcie ręki zatrzymuje ruch; wychylenie boczne jest ignorowane.
+Preferencja zapisuje się między sesjami i ma opis w trybie `?`.
+
+Odtworzono i poprawiono rozjazd głowy i ciała przy starcie na wprost:
+rozpoznanie znaku osi nie wymaga już wcześniejszego ruchu myszy, jeśli
+aktywny jest zweryfikowany profil gry. Test przed poprawką nie przechodził
+przy 0 rad, a przechodził przy 0,3 rad; teraz przechodzi w obu przypadkach.
+Release, **56/56 CTest**, **51/51 Python**, **78 kontroli EXE** przechodzą.
+Nowy przełącznik i poprawka kierunku wymagają próby w goglach.
+[Diagnoza, obsługa i testy](forward-only-and-heading-20261106.md).
+
 ## Animacja Driver seat wdrożona
 
 Widoczna kierownica standardowego Driver seat jest teraz powiązana z kątem
@@ -11,7 +30,7 @@ normalnych, głębi/cieni i historii ruchu wspólnej dla obu oczu.
 Release, **56/56 CTest**, **51/51 Python**, **78 kontroli EXE** i osobny
 test DLL/renderera przechodzą. Test GPU sprawdził wszystkie 2558 wierzchołków
 prawdziwego modelu z shaderami gry, w tym niezmienność fotela i kolumny.
-Gra pozostaje zamknięta; animacja podczas jazdy wymaga próby w goglach.
+Późniejsza próba 20:00 potwierdziła działanie animacji — patrz powyżej.
 [Implementacja, dowody i lista próby](driver-wheel-animation-20261106.md).
 
 ## Najnowsza próba 18:27: koła działają, poprawiono blokadę po OK

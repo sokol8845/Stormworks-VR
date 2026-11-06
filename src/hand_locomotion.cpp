@@ -126,8 +126,8 @@ void HandLocomotion::publish(const XrRuntimeFrame& frame,bool allowed,Clock::tim
         if(!std::isfinite(length(delta))||length(delta)>.45f){clear();return;}
         const float forward=-delta.z;
         const auto& s=settings_.joystick;
-        const bool sprint=forward>=(command_.sprint?s.sprint_off_m:s.sprint_on_m)&&forward>std::abs(delta.x)*1.5f;
-        command_={axis(forward,s),axis(delta.x,s),true,sprint};
+        const bool sprint=forward>=(command_.sprint?s.sprint_off_m:s.sprint_on_m)&&(s.forward_only||forward>std::abs(delta.x)*1.5f);
+        command_={s.forward_only?std::max(0.f,axis(forward,s)):axis(forward,s),s.forward_only?0.f:axis(delta.x,s),true,sprint};
         status_=sprint?"BIEG":command_.forward||command_.sideways?"CHOD":!legacy?"JOYSTICK - NEUTRALNY":selected?"PRZESUN PRAWA DLON":"PRZESUN LEWA DLON";
     } catch(...) {clear();}
 }

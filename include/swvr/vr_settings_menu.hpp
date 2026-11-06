@@ -2,7 +2,7 @@
 #include "swvr/pointing_panel.hpp"
 #include "swvr/gesture_settings.hpp"
 namespace swvr {
-enum class VrMenuAction { joystick,arm_swing,reload,calibrate,clear_profile,keypad,joystick_left,joystick_right,priority_left,priority_right,close,controls,back,turn_slower,turn_faster,turn_dead_less,turn_dead_more,turn_range_less,turn_range_more,menu_nearer,menu_farther,defaults,interface_page,comfort_page,dwell_less,dwell_more,scale_less,scale_more,sound_toggle,turn_toggle,snap_30,snap_45,vignette_toggle,head_toggle,seated_toggle,recenter,help };
+enum class VrMenuAction { joystick,arm_swing,reload,calibrate,clear_profile,keypad,joystick_left,joystick_right,priority_left,priority_right,close,controls,back,turn_slower,turn_faster,turn_dead_less,turn_dead_more,turn_range_less,turn_range_more,menu_nearer,menu_farther,defaults,interface_page,comfort_page,dwell_less,dwell_more,scale_less,scale_more,sound_toggle,turn_toggle,snap_30,snap_45,vignette_toggle,head_toggle,seated_toggle,recenter,help,movement_page,forward_only_toggle };
 std::string_view vr_menu_help(VrMenuAction)noexcept;
 // Returns whether an action changes preferences; the host applies it after releasing input.
 bool adjust_vr_preferences(VrMenuAction,GestureSettings&);

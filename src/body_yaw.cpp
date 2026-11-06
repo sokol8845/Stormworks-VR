@@ -17,14 +17,16 @@ double wrap_pi(double radians) noexcept {
 void LookYawCalibration::observe(float field_radians,const Matrix4d& look) noexcept {
     if(locked_)return;
     const double field=field_radians;
-    // Near multiples of pi/2 two of the four mappings coincide; wait for an unambiguous angle.
-    if(!std::isfinite(field)||std::abs(std::sin(field))<.2||std::abs(std::cos(field))<.2)return;
+    // With no verified profile, two mappings coincide near multiples of pi/2.
+    // The supported EXE supplies its measured sign; even at zero, the offset
+    // must still agree with the live look matrix for the whole sample window.
+    if(!std::isfinite(field)||(!verified_sign_&&(std::abs(std::sin(field))<.2||std::abs(std::cos(field))<.2))){agree_=0;return;}
     const double horizontal=std::hypot(look[8],look[10]);
     if(!std::isfinite(horizontal)||horizontal<.2){agree_=0;return;}
     const double measured=game_camera_yaw(look);
     int matches{},sign{};double offset{};
     for(int s:{1,-1})for(double o:{0.,pi})
-        if(std::abs(wrap_pi(measured-(s*field+o)))<match_tolerance){++matches;sign=s;offset=o;}
+        if((!verified_sign_||s==verified_sign_)&&std::abs(wrap_pi(measured-(s*field+o)))<match_tolerance){++matches;sign=s;offset=o;}
     if(matches!=1){agree_=0;return;}
     if(agree_&&sign==candidate_sign_&&offset==candidate_offset_)++agree_;
     else {candidate_sign_=sign;candidate_offset_=offset;agree_=1;}
