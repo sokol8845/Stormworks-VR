@@ -1,5 +1,19 @@
 # Stan pracy — Stormworks VR (2026-11-06)
 
+## Animacja Driver seat wdrożona
+
+Widoczna kierownica standardowego Driver seat jest teraz powiązana z kątem
+dłoni: obręcz, szprychy i piasta obracają się wokół pochylonej osi, a fotel
+i kolumna pozostają nieruchome. Działa z istniejącym presetem, z jedną lub
+dwiema trzymającymi dłońmi; po puszczeniu wraca do zera. Dodano obsługę
+normalnych, głębi/cieni i historii ruchu wspólnej dla obu oczu.
+
+Release, **56/56 CTest**, **51/51 Python**, **78 kontroli EXE** i osobny
+test DLL/renderera przechodzą. Test GPU sprawdził wszystkie 2558 wierzchołków
+prawdziwego modelu z shaderami gry, w tym niezmienność fotela i kolumny.
+Gra pozostaje zamknięta; animacja podczas jazdy wymaga próby w goglach.
+[Implementacja, dowody i lista próby](driver-wheel-animation-20261106.md).
+
 ## Najnowsza próba 18:27: koła działają, poprawiono blokadę po OK
 
 Użytkownik potwierdził skręt kół i puszczanie kierownicy. Przyciski pojazdu
@@ -12,8 +26,8 @@ i obu wielkości klawiatury. Release, **53/53 CTest**, **51/51 Python**
 i **76 kontroli EXE** przechodzą. Wymagana ponowna próba OK/ANULUJ →
 przycisk pojazdu. Gra jest zamknięta.
 
-**Grafika kierownicy standardowego Driver seat pozostaje nieruchoma**;
-nie ma jeszcze połączenia osi skrętu z geometrią tego modelu.
+Grafika kierownicy była nieruchoma podczas tej próby; późniejsze wdrożenie
+opisano powyżej.
 Dowody, testy i pozostała praca:
 [blokada po klawiaturze i stan kierownicy](keypad-release-fix-20261106.md).
 Lokalna zmiana prędkości obrotu użytkownika z 45 na 60 została zachowana.

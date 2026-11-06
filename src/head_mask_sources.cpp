@@ -4,14 +4,14 @@
 
 namespace swvr {
 namespace {
-constexpr unsigned fragment_shader=0x8B30,shader_type=0x8B4F,compile_status=0x8B81;
+constexpr unsigned shader_type=0x8B4F,compile_status=0x8B81;
 constexpr std::size_t max_source=16*1024*1024,max_backups=256,max_backup_bytes=64*1024*1024;
 }
 bool HeadMaskShaderSources::submit(std::uintptr_t context,unsigned shader,int count,const char* const* strings,
                                    const int* lengths,const HeadMaskShaderApi& api,TraceNote note) {
     if(count<=0 || count>1024 || !strings || !api.source) return false;
     int type{};if(api.get_shader) api.get_shader(shader,shader_type,&type);
-    if(type==static_cast<int>(fragment_shader)) {
+    if(type==static_cast<int>(type_) && patch_) {
         std::string original;
         bool supported=true;
         for(int i=0;i<count;++i) {
@@ -21,7 +21,7 @@ bool HeadMaskShaderSources::submit(std::uintptr_t context,unsigned shader,int co
             original.append(strings[i],length);
         }
         if(supported) {
-            auto patch=patch_head_mask_fragment(original);
+            auto patch=patch_(original);
             if(patch.patched) {
                 bool backed_up{};
                 {
@@ -39,7 +39,7 @@ bool HeadMaskShaderSources::submit(std::uintptr_t context,unsigned shader,int co
                 if(backed_up) {
                     const auto data=patch.source.c_str();const auto size=static_cast<int>(patch.source.size());
                     api.source(shader,1,&data,&size);++patched_;
-                    if(note) note("head_mask_shader","known_fragment_patched_in_memory");
+                    if(note) note(label_,"known_shader_patched_in_memory");
                     return true;
                 }
             }
@@ -60,7 +60,7 @@ void HeadMaskShaderSources::compiled(std::uintptr_t context,unsigned shader,cons
     if(!ok && api.source && api.compile) {
         const auto data=original.c_str();const auto size=static_cast<int>(original.size());
         api.source(shader,1,&data,&size);api.compile(shader);
-        ++fallbacks_;if(note) note("head_mask_shader","compile_failed_restored_original");
+        ++fallbacks_;if(note) note(label_,"compile_failed_restored_original");
     }
 }
 void HeadMaskShaderSources::forget(std::uintptr_t context,unsigned shader) {

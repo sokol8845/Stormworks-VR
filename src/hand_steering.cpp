@@ -49,8 +49,9 @@ void HandSteering::publish(const XrRuntimeFrame& f,const GestureSettings& settin
             last_angle_[h]=angle;command_.hands[h]=closed_[h]=true;
         }
         command_.active=command_.hands[0]||command_.hands[1];
-        if(!command_.active){angle_=0;command_.axis=0;return;}
+        if(!command_.active){angle_=0;command_={};return;}
         if(contributors)angle_=std::clamp(angle_+sum/static_cast<float>(contributors),-pi/2,pi/2);
+        command_.angle_radians=angle_;command_.seat=seat_;
         const float target=std::copysign(std::clamp((std::abs(angle_)-.025f)/(pi/2-.025f),0.f,1.f),angle_);
         const float blend=1.f-std::exp(-static_cast<float>(dt)*1e-9f/.04f);
         command_.axis+=blend*(target-command_.axis);

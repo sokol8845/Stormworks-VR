@@ -1,4 +1,6 @@
 #include "swvr/head_mask_sources.hpp"
+#include "swvr/driver_wheel_shader.hpp"
+#include "driver_wheel_fixture.hpp"
 #include <cstring>
 #include <iostream>
 #include <map>
@@ -48,6 +50,12 @@ int main(){try{
     type[999]=0x8B30;require(!sources.submit(ctx,999,2,parts,lengths,api,note)&&sources.backups()==256,"backup budget exceeded");
     // Malformed input is refused without touching GL.
     const char* null_part[1]{nullptr};require(!sources.submit(ctx,4,1,null_part,nullptr,{source,compile,nullptr},note),"null source accepted");
-    std::cout<<"PASS: head-mask source injector patches known fragments, falls back on compile failure and bounds backups\n";
+    swvr::HeadMaskShaderSources wheels{0x8B31,swvr::patch_driver_wheel_vertex,"driver_wheel_shader"};
+    const auto vertex=wheel_fixture::opaque();const char* v=vertex.c_str();type[1000]=0x8B31;
+    require(wheels.submit(ctx,1000,1,&v,nullptr,api,note)&&submitted[1000].find("swvr_wheel_active")!=std::string::npos,"wheel source injection failed");
+    compiled[1000]=0;wheels.compiled(ctx,1000,api,note);require(submitted[1000]==vertex&&wheels.fallbacks()==1,"wheel compile fallback lost original");
+    type[1001]=0x8B30;require(!wheels.submit(ctx,1001,1,&v,nullptr,api,note),"wheel injector accepted fragment shader");
+    wheels.context_destroyed(ctx);require(wheels.backups()==0,"wheel context retained backup");
+    std::cout<<"PASS: head-mask/wheel shader injection, compile fallback and bounded backups\n";
     return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

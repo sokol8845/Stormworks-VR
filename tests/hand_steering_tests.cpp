@@ -9,9 +9,10 @@ struct Fixture {HandSteering steering;GestureSettings settings;std::uint64_t id{
 };
 int main(){try{
     {Fixture f;check(!f.step(0).active,"closed hands on entry grabbed without opening");f.grip();for(int i=1;i<=15;++i)f.step(i*.05f);check(f.steering.inspect(f.now).axis>.35f,"clockwise turn did not steer right");
+     check(std::abs(f.steering.inspect(f.now).angle_radians-.75f)<.02f&&f.steering.inspect(f.now).seat==42,"wheel visual angle/seat missing");
      const float before=f.steering.inspect(f.now).axis;auto s=f.step(.75f,false,true);check(s.active&&!s.hands[0]&&s.hands[1]&&std::abs(s.axis-before)<.05f,"releasing one hand jumped steering");
      for(int i=1;i<=8;++i)f.step(.75f+i*.05f,false,true);check(f.steering.inspect(f.now).axis>before,"one-hand steering failed");
-     s=f.step(1.15f,false,false);check(!s.active&&s.axis==0,"both hands did not release");}
+     s=f.step(1.15f,false,false);check(!s.active&&s.axis==0&&s.angle_radians==0&&s.seat==0,"both hands did not release");}
     {Fixture f;f.grip();for(int i=1;i<=15;++i)f.step(-i*.05f);check(f.steering.inspect(f.now).axis<-.35f,"left steering sign");f.step(-.75f,true,true,false);check(!f.steering.inspect(f.now).active&&!f.step(-.75f).active,"modal suspension reused a closed grip");}
     {Fixture f;f.grip();check(!f.step(2.f).active,"tracking jump generated a steering impulse");check(!f.step(0).active,"tracking jump rearmed closed hands");}
     {Fixture f;f.grip();check(!f.steering.inspect(f.now+std::chrono::milliseconds(101)).active,"stale steering stayed held");}

@@ -73,7 +73,11 @@ z rzeczywistą klawiaturą w pojeździe.
 3. Powtórzyć lewą dłonią i po ANULUJ; sprawdzić małą i dużą klawiaturę.
 4. Powtórzyć otwieranie i zamykanie kilka razy, bez ponownej kalibracji.
 
-## Grafika kierownicy — pozostaje otwarta
+## Grafika kierownicy — stan w chwili poprawki klawiatury
+
+**Aktualizacja:** animację następnie wdrożono i sprawdzono offline;
+[szczegóły Driver seat](driver-wheel-animation-20261106.md).
+Poniżej zapis rozpoznania sprzed tego wdrożenia.
 
 Użytkownik potwierdził **Driver seat**, a nie Helm ani własną konstrukcję.
 `rom/data/definitions/seat_racing.xml` wskazuje

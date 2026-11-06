@@ -6,6 +6,7 @@
 #include <mutex>
 #include <string>
 #include <utility>
+#include "swvr/head_mask_shader.hpp"
 
 namespace swvr {
 // GL entry points used by the injector (x64: one calling convention).
@@ -15,11 +16,15 @@ struct HeadMaskShaderApi {
     void(*get_shader)(unsigned shader,unsigned pname,int* value){}; // May be null.
 };
 using TraceNote=void(*)(const char* key,const char* message) noexcept;
-// In-memory head-mask injection for glShaderSource/glCompileShader hooks. Keeps
-// the ORIGINAL source of each patched fragment (per context and shader) so a
+// In-memory injection for glShaderSource/glCompileShader hooks; defaults to the
+// head mask, also reused for Driver wheel vertex shaders. Keeps the ORIGINAL
+// source of each patched shader (per context and shader) so a
 // failed compile can be retried with the unmodified game shader.
 class HeadMaskShaderSources {
 public:
+    using Patch=HeadMaskShaderPatch(*)(std::string_view);
+    explicit HeadMaskShaderSources(unsigned type=0x8B30,Patch patch=patch_head_mask_fragment,const char* label="head_mask_shader")
+        :type_(type),patch_(patch),label_(label){}
     // True when the patched source has been submitted; the hook must then NOT
     // submit the original. False leaves submission to the caller and drops any
     // older backup for this shader.
@@ -33,6 +38,7 @@ public:
     unsigned fallbacks() const noexcept;
     std::size_t backups() const;
 private:
+    unsigned type_;Patch patch_;const char* label_;
     using Key=std::pair<std::uintptr_t,unsigned>;
     mutable std::mutex mutex_;
     std::map<Key,std::string> backups_;

@@ -37,6 +37,8 @@
 #include "swvr/xr_runtime.hpp"
 #include "swvr/xr_readiness.hpp"
 #include "swvr/avatar_pose_gl.hpp"
+#include "swvr/driver_wheel_gl.hpp"
+#include "swvr/driver_wheel_shader.hpp"
 #include "swvr/avatar_calibration.hpp"
 #include "swvr/avatar_profile.hpp"
 #include "swvr/gesture_control.hpp"
@@ -142,6 +144,14 @@ bool input_probe_active{};
 bool avatar_requested{};
 std::atomic<bool> avatar_enabled{};
 swvr::GlAvatarPose avatar_pose;
+swvr::GlDriverWheel driver_wheel;
+swvr::HeadMaskShaderSources wheel_sources{0x8B31,swvr::patch_driver_wheel_vertex,"driver_wheel_shader"};
+std::atomic<bool> wheel_enabled{};
+bool wheel_requested{};
+void xr_note(const char*,const char*) noexcept;
+void wheel_failed(const char* error) noexcept {
+    if(wheel_enabled.exchange(false)){driver_wheel.end_eye();xr_note("driver_wheel_error",error);}
+}
 std::unique_ptr<swvr::NativeAvatarIdentity> avatar_identity;
 bool hand_buttons_active{},hand_cleanup_pending{};
 ULONGLONG hand_cleanup_started{};
@@ -264,6 +274,7 @@ GLint APIENTRY location(GLuint program,const char* name) {
 void APIENTRY matrix(GLint loc,GLsizei count,GLboolean transpose,const GLfloat* values) {
     real_matrix(loc,count,transpose,values);
     if(avatar_enabled)try {avatar_pose.matrix_uploaded(loc,count,transpose!=GL_FALSE,values);}catch(const std::exception& error) {avatar_failed(error.what());}
+    if(wheel_enabled)try {driver_wheel.matrix_uploaded(loc,count,transpose!=GL_FALSE,values);}catch(const std::exception& error) {wheel_failed(error.what());}
     record("matrix4",loc,count,transpose,_ReturnAddress(),nullptr,count>0?values:nullptr);
 }
 void camera_update(void* camera,float aspect) {
@@ -274,10 +285,11 @@ void camera_update(void* camera,float aspect) {
     if(active_eye_fov && (camera_caller==0x6d4f80 || camera_caller==0x6d5027 || camera_caller==0x6d50ca)) {
         try {
             const auto lens_index=camera_caller==0x6d4f80?0:camera_caller==0x6d5027?1:2;
-            if(lens_index==0 && avatar_enabled) {
+            if(lens_index==0 && (avatar_enabled || wheel_enabled)) {
                 swvr::Matrix4d transform{};
                 std::memcpy(transform.data(),static_cast<unsigned char*>(camera)+swvr::game_profile::transform_offset,sizeof(transform));
-                avatar_pose.camera_rebased(transform);
+                if(avatar_enabled)avatar_pose.camera_rebased(transform);
+                if(wheel_enabled)driver_wheel.camera_rebased(transform);
             }
             swvr::apply_game_eye_projection({static_cast<unsigned char*>(camera),swvr::game_profile::camera_size},active_eye_fov[lens_index]);
             ++eye_projection_updates;
@@ -381,6 +393,10 @@ void APIENTRY shader_source(GLuint shader,GLsizei count,const char* const* strin
     // A new source submission supersedes any older fallback, even when the
     // feature has since been disabled or the new shader is unsupported.
     if(head_mask_requested) try {shader_sources.forget(current_context(),shader);} catch(...) {}
+    if(wheel_requested)try {wheel_sources.forget(current_context(),shader);}catch(...){}
+    if(wheel_enabled)try {
+        if(wheel_sources.submit(current_context(),shader,count,strings,lengths,shader_api(),xr_note))return;
+    }catch(const std::exception& error){wheel_failed(error.what());}
     if(head_mask_enabled && count>0 && count<=1024 && strings) try {
         if(shader_sources.submit(current_context(),shader,count,strings,lengths,shader_api(),xr_note)) return;
     } catch(const std::exception& error) {xr_note("head_mask_shader_error",error.what());}
@@ -388,16 +404,19 @@ void APIENTRY shader_source(GLuint shader,GLsizei count,const char* const* strin
 }
 void APIENTRY compile_shader(GLuint shader) {
     real_compile_shader(shader);
+    if(wheel_requested)try{wheel_sources.compiled(current_context(),shader,shader_api(),xr_note);}catch(const std::exception& error){wheel_failed(error.what());}
     if(!head_mask_requested) return;
     try {shader_sources.compiled(current_context(),shader,shader_api(),xr_note);}
     catch(const std::exception& error) {xr_note("head_mask_shader_error",error.what());}
 }
 void APIENTRY link_program(GLuint program) {
     real_link_program(program);
+    if(wheel_enabled)try{driver_wheel.program_linked(program);}catch(const std::exception& error){wheel_failed(error.what());}
     if(avatar_enabled)try {avatar_pose.program_linked(program);}catch(const std::exception& error) {avatar_failed(error.what());}
     if(head_mask_requested) try {head_mask.program_linked(program);} catch(...) {head_mask_enabled=false;}
 }
 void APIENTRY delete_shader(GLuint shader) {
+    if(wheel_requested)try{wheel_sources.forget(current_context(),shader);}catch(...){}
     if(head_mask_requested) try {shader_sources.forget(current_context(),shader);} catch(...) {}
     real_delete_shader(shader);
 }
@@ -405,6 +424,7 @@ void APIENTRY uniform_int(GLint location,GLint value) {real_uniform_int(location
 void APIENTRY uniform_float(GLint location,GLfloat value) {real_uniform_float(location,value);apply_head_mask(head_eye_active());}
 BOOL WINAPI delete_context(HGLRC context) {
     const auto result=real_delete_context(context);
+    if(result && wheel_requested)try{driver_wheel.context_destroyed(context);wheel_sources.context_destroyed(reinterpret_cast<std::uintptr_t>(context));}catch(...){}
     if(result && avatar_enabled)try {avatar_pose.context_destroyed(context);}catch(const std::exception& error) {avatar_failed(error.what());}
     if(result && head_mask_requested) try {
         head_mask.context_destroyed(context);
@@ -849,7 +869,7 @@ struct NativeVr {
         if(fresh) ++submitted;
     }
     void close() {
-        avatar_pose.end_eye();
+        avatar_pose.end_eye();driver_wheel.end_eye();
         hand_steering.reset();swvr::vehicle_keypad_poll(false);
         const auto keypad_stats=swvr::vehicle_keypad_stats();xr_note("vehicle_keypad_totals",("opened="+std::to_string(keypad_stats.opened)+" submitted="+std::to_string(keypad_stats.submitted)+" cancelled="+std::to_string(keypad_stats.cancelled)+" rejected="+std::to_string(keypad_stats.rejected)+" faults="+std::to_string(keypad_stats.faults)).c_str());
         hand_interactions.reset();
@@ -915,6 +935,11 @@ struct NativeVr {
                 for(const auto& entry:journal)draws<<swvr::format_avatar_journal_row(entry)<<'\n';
                 xr_note("avatar_draw_journal",("entries="+std::to_string(journal.size())).c_str());
             } catch(const std::exception& error) {xr_note("avatar_draw_journal_error",error.what());}
+        }
+        if(wheel_requested){
+            const auto s=driver_wheel.stats();xr_note("driver_wheel_totals",("eyes="+std::to_string(s.eyes)+" identified="+std::to_string(s.identified_eyes)+
+                " draws="+std::to_string(s.draws)+" depth_draws="+std::to_string(s.depth_draws)+" patched_shaders="+std::to_string(wheel_sources.patched())+
+                " compile_fallbacks="+std::to_string(wheel_sources.fallbacks())).c_str());
         }
         if(head_mask_requested) {
             const auto h=head_mask.stats();
@@ -1251,6 +1276,9 @@ void render(void* renderer,void* graphics,void* scene,void* commands,void* targe
         std::array<GLint,2> framebuffer{};
         std::vector<swvr::AvatarPaletteBinding> avatar_bindings;
         if(avatar_enabled && xr_render && gameplay_preview && avatar_identity)avatar_bindings=avatar_identity->palettes(scene);
+        auto wheel_seat=wheel_enabled&&xr_render&&gameplay_preview?swvr::native_driver_seat(swvr::native_steering_seat()):swvr::DriverSeatSnapshot{};
+        if(xr_render&&!native_vr->current.focused)wheel_seat={};
+        const auto wheel_command=hand_steering.inspect();
         for(unsigned eye=0;eye<2;++eye) {
             active_eye_fov=xr_render?lenses[eye].data():nullptr;
             eye_projection_failed=false;eye_projection_updates=0;
@@ -1320,8 +1348,9 @@ void render(void* renderer,void* graphics,void* scene,void* commands,void* targe
                 avatar_targets.body=native_vr->avatar_body;
                 avatar_pose.begin_eye(std::move(avatar_targets),identity,native_transform(copies[eye][0].data()),avatar_bindings);
             }
+            if(wheel_enabled&&xr_render)driver_wheel.begin_eye(wheel_seat,wheel_command,native_transform(copies[eye][0].data()),native_vr->current.id);
             real_renderer(renderer,graphics,scene,commands,eye_targets,copies[eye][0].data(),copies[eye][1].data(),copies[eye][2].data());
-            avatar_pose.end_eye();
+            avatar_pose.end_eye();driver_wheel.end_eye();
             if(xr_render){const auto milliseconds=NativeVr::elapsed(render_time);native_vr->render_ms+=milliseconds;native_vr->performance.render_eye.observe(milliseconds,native_vr->current.id);}
             active_eye_fov=nullptr;
             apply_head_mask(false);
@@ -1363,7 +1392,7 @@ void render(void* renderer,void* graphics,void* scene,void* commands,void* targe
         }
     } catch(const std::exception& error) {
         active_eye_fov=nullptr;
-        avatar_pose.end_eye();
+        avatar_pose.end_eye();driver_wheel.end_eye();
         apply_head_mask(false);
         xr_note("stereo_preview_error",error.what());
         const auto owner=(gameplay_preview && native_vr)?native_vr->camera_owner:nullptr;
@@ -1477,14 +1506,20 @@ swvr::GlAvatarPose::Draw avatar_draw() noexcept {
     }
     return {};
 }
+swvr::GlDriverWheel::Draw wheel_draw() noexcept {
+    if(wheel_enabled)try{return driver_wheel.before_draw();}catch(const std::exception& error){wheel_failed(error.what());}
+    return {};
+}
 void APIENTRY elements(GLenum mode,GLsizei count,GLenum type,const void* indices) {
     apply_head_mask(head_eye_active());
     auto avatar=avatar_draw();
+    auto wheel=wheel_draw();
     record("draw_elements",mode,count,type,_ReturnAddress());real_elements(mode,count,type,indices);
 }
 void APIENTRY arrays(GLenum mode,GLint first,GLsizei count) {
     apply_head_mask(head_eye_active());
     auto avatar=avatar_draw();
+    auto wheel=wheel_draw();
     record("draw_arrays",mode,first,count,_ReturnAddress());real_arrays(mode,first,count);
 }
 void APIENTRY viewport(GLint x,GLint y,GLsizei width,GLsizei height) {
@@ -1685,7 +1720,16 @@ extern "C" __declspec(dllexport) DWORD WINAPI swvr_trace_start(void* log_path) {
         const bool installed=locomotion_mode_valid&&body_yaw_enabled&&swvr::install_native_locomotion(
             executable_base,hash==swvr::game_profile::sha256,hand_locomotion,hand_buttons_active);
         const bool observing=installed&&(!hand_buttons_active||swvr::set_native_hand_lifecycle_callbacks(swvr::native_locomotion_lifecycle_callbacks()));
-        if(observing){xr_note("locomotion","hooks_created");xr_note("hand_steering",swvr::enable_native_steering(hand_steering)?"ready_axis_1":"installation_failed");}
+        if(observing){
+            xr_note("locomotion","hooks_created");const bool steering_ready=swvr::enable_native_steering(hand_steering);
+            xr_note("hand_steering",steering_ready?"ready_axis_1":"installation_failed");
+            if(steering_ready)try{
+                auto mesh=swvr::load_driver_seat_mesh(std::filesystem::path(host_path).parent_path()/L"rom"/L"meshes"/L"component_seat_racing.mesh");
+                if(!swvr::install_native_driver_seat(executable_base,hash==swvr::game_profile::sha256))throw std::runtime_error("Driver seat observer could not be installed");
+                driver_wheel.configure(original_gl_proc,std::move(mesh.points));wheel_requested=true;wheel_enabled=true;
+                xr_note("driver_wheel","ready_local_driver_seat_geometry");
+            }catch(const std::exception& error){xr_note("driver_wheel_error",error.what());}
+        }
         else {openxr_preview=false;stereo_preview=false;xr_note("openxr_error","Requested locomotion backend could not be installed");}
     }
     const auto hand_ray_status=swvr::install_native_hand_ray(executable_base,hash==swvr::game_profile::sha256,diagnostic_base,

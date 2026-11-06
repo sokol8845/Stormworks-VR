@@ -5,7 +5,7 @@
 #include <mutex>
 #include <optional>
 namespace swvr {
-struct SteeringCommand {float axis{};std::array<bool,2> hands{};bool active{};};
+struct SteeringCommand {float axis{};std::array<bool,2> hands{};bool active{};float angle_radians{};std::uintptr_t seat{};};
 // The first two-hand grip establishes the rim in LOCAL space. Afterwards either
 // hand can steer/regrip. Native seat identity and fresh tracking are mandatory.
 class HandSteering {

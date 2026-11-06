@@ -26,7 +26,7 @@ def verify(executable):
 
     aliases={'serializer':'serializer','dispatch':'dispatch','raw':'raw_clear','typed':'typed_clear',
              'delete':'delete','free':'free','reset':0x23ff80,'destroy':0x23ea20}
-    for source in SOURCES+[ROOT/'src/native_avatar_identity.cpp',ROOT/'src/native_locomotion.cpp',ROOT/'include/swvr/native_keypad_request.hpp',ROOT/'src/native_vehicle_keypad.cpp']:
+    for source in SOURCES+[ROOT/'src/native_avatar_identity.cpp',ROOT/'src/native_locomotion.cpp',ROOT/'include/swvr/native_keypad_request.hpp',ROOT/'src/native_vehicle_keypad.cpp',ROOT/'src/native_driver_seat.cpp']:
         text=source.read_text(encoding='utf-8')
         values={name:int(value,16) for name,value in re.findall(r'\b(\w+)\s*=\s*(0x[0-9a-fA-F]+)',text)}
         for name,body in re.findall(r'std::array<unsigned char,\d+>\s+(\w+)\s*\{([^}]+)\}',text):
@@ -50,6 +50,8 @@ def verify(executable):
             for rva,body in re.findall(r'\{(0x[0-9a-fA-F]+),\{([^}]+)\}\}',text):
                 raw=raw_bytes(body)
                 if len(raw)==24:check(source,'hook entry',int(rva,16),raw)
+        if source.name=='native_driver_seat.cpp':
+            check(source,'Driver seat update vtable',values['seat_vtable']+0x358,(pe.base+values['seat_update_rva']).to_bytes(8,'little'))
         if source.name=='native_locomotion.cpp':
             check(source,'full input serializer vtable',values['full_input_vtable'],(pe.base+values['full_input_serialize_rva']).to_bytes(8,'little'))
             for site in (0x86a366,0x86cde6):
