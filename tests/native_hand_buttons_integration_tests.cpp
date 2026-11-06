@@ -232,7 +232,10 @@ struct State {
             ++s.press_actions;if(id==19)++s.left_presses;
             const auto hand=id==19?HandAction::q:HandAction::e;
             put(controller,hand_held_offset(hand),s.button_ptr());put(controller,hand_down_offset(hand),std::uint8_t{1});
-            put(controller,hand_hit_offset(hand),read<std::array<float,3>>(controller,0x528));return;
+            put(controller,hand_hit_offset(hand),read<std::array<float,3>>(controller,0x528));
+            const auto type=read<unsigned>(s.definition.data(),0xda4);
+            if(type==5||type==6)put(controller,0x518,s.button_ptr());
+            return;
         }
         require(id==99 && phase==1,"Unexpected foreign native action");++s.foreign_actions;
     }
@@ -446,6 +449,25 @@ struct State {
         free_buffer(foreign_payload);require(outer.count==0,"Native clear did not finish the outer queue");
         envelope_active=false;outer_live=nullptr;parent_live=0;
     }
+    void keypad_then_button(unsigned hand,unsigned type) {
+        test_hand=hand;bridge.reset();reset_native_hand_buttons();
+        const auto before=native_hand_buttons_stats();
+        put(definition.data(),0xda4,type);
+        frame(false);select();tick();frame(true);select();tick();
+        auto* c=reinterpret_cast<void*>(controller());
+        require(read<U>(c,0x518)==button_ptr(),"Native keypad Show session was lost");
+        const auto opened=native_hand_buttons_stats();
+        require(opened.presses_accepted==before.presses_accepted+1&&opened.keypad_hand_releases==before.keypad_hand_releases+1&&
+            !opened.own_hold&&!opened.blocked&&requests.empty()&&!read<U>(c,hand_held_offset(hand?HandAction::e:HandAction::q))&&
+            !read<unsigned char>(c,hand_down_offset(hand?HandAction::e:HandAction::q)),
+            "Keypad retained native Q/E state or emitted a type10 request");
+        // The original OK and Cancel paths both queue this Clear24 effect.
+        put(c,0x518,U{});bridge.reset();reset_native_hand_buttons();
+        put(definition.data(),0xda4,unsigned{0});
+        pipeline(false,false);
+        require(native_hand_buttons_stats().presses_accepted==before.presses_accepted+2,
+            "Vehicle button did not work after keypad OK/Cancel");
+    }
     void pipeline(bool focus_loss,bool localhost,bool shutdown=false) {
         const auto before=native_hand_buttons_stats();hover_hit=saved_hit;
         frame(false);select();tick(localhost);frame(true);select();tick(localhost);
@@ -594,6 +616,9 @@ int main() {
             retirement.localhost_retired==4 && retirement.source_reset_retired==2 && retirement.source_destroy_retired==2 &&
             !retirement.quarantined && !fixture.phase0_actions && !fixture.short_clicks,
             "Final integration service counters disagree with the actual pipeline");
+        enable_native_keypad_opening(true);
+        for(unsigned hand:{0u,1u})for(unsigned type:{5u,6u})fixture.keypad_then_button(hand,type);
+        enable_native_keypad_opening(false);
         flush_native_hand_buttons();flush_native_hand_ray();
         SetEnvironmentVariableW(L"SWVR_HAND_BUTTONS",nullptr);SetEnvironmentVariableW(L"SWVR_HAND_RAY",nullptr);
         std::cout<<"Native hand-buttons integration passed: real bridge/ray/buttons/capture/bindings/builder/retirement; "

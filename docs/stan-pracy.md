@@ -1,6 +1,24 @@
 # Stan pracy — Stormworks VR (2026-11-06)
 
-## Po najnowszej próbie: poprawki offline, wymagają testu w goglach
+## Najnowsza próba 18:27: koła działają, poprawiono blokadę po OK
+
+Użytkownik potwierdził skręt kół i puszczanie kierownicy. Przyciski pojazdu
+blokowały się po **OK klawiatury**, a menu VR pozostawało sprawne.
+Odtworzono błąd: natywne otwarcie klawiatury zostawia wskaźnik trzymania
+i wciśnięte Q/E, których Clear24 nie zwalnia. Adapter czyści teraz własny
+stan przy otwarciu, zachowując sesję klawiatury. Regresja najpierw nie
+przechodziła; po poprawce przechodzi, podobnie jak integracja obu dłoni
+i obu wielkości klawiatury. Release, **53/53 CTest**, **51/51 Python**
+i **76 kontroli EXE** przechodzą. Wymagana ponowna próba OK/ANULUJ →
+przycisk pojazdu. Gra jest zamknięta.
+
+**Grafika kierownicy standardowego Driver seat pozostaje nieruchoma**;
+nie ma jeszcze połączenia osi skrętu z geometrią tego modelu.
+Dowody, testy i pozostała praca:
+[blokada po klawiaturze i stan kierownicy](keypad-release-fix-20261106.md).
+Lokalna zmiana prędkości obrotu użytkownika z 45 na 60 została zachowana.
+
+## Wcześniejsza poprawka: kliknięcia przy ruchu głowy i analogowy skręt
 
 Użytkownik doprecyzował: nie działały **przyciski pojazdu**, nie obracała się
 ani kierownica, ani koła. Naprawiono dwa odtworzone błędy: reset kliknięcia

@@ -95,6 +95,7 @@ struct Backend {
     unsigned transition_depth{};
     NativeInputLifecycleCallbacks lifecycle;
     U last_target{};int last_target_type{-2}; // Diagnostic target classification (state_mutex).
+    std::uint64_t reported_gesture{};
     std::optional<HandEventCertificate> candidate;
     std::optional<HandEventToken> pending;
     std::optional<Hold> hold;
@@ -348,9 +349,22 @@ void selection_complete(void*,const NativeHandSelection& selection) noexcept {
             }
         }
         const bool ray_ok=selection.completed&&selection.used_hand_ray&&!selection.nested_selection;
-        if(!ray_ok || press_gate(b,live,selection.target_token)) {
+        const auto gate=ray_ok?press_gate(b,live,selection.target_token):nullptr;
+        if(!ray_ok || gate) {
             const auto latest=b.bridge->inspect();
-            std::lock_guard lock(b.state_mutex);b.candidate.reset();if(latest.pinch_down)b.require_open=true;return;
+            bool report{};const auto reason=ray_ok?gate:"hand_ray_not_used";
+            {std::lock_guard lock(b.state_mutex);b.candidate.reset();if(latest.pinch_down)b.require_open=true;
+                if(latest.valid_ray&&latest.pinch_down&&!b.hold&&!b.pending&&!b.operation&&b.reported_gesture!=latest.pinch_gesture_id) {
+                    b.reported_gesture=latest.pinch_gesture_id;report=true;
+                    ++b.counters.selection_denials;b.counters.last_selection_denial=reason;
+                }
+            }
+            if(report) {
+                HandEventCertificate diagnostic;diagnostic.selected_sequence=selection.sample.sequence;
+                diagnostic.pinch_gesture_id=latest.pinch_gesture_id;diagnostic.target_token=selection.target_token;
+                b.note("selection_denied",reason,&diagnostic);
+            }
+            return;
         }
         const auto gesture=b.bridge->consume_selected(selection.sample.sequence);
         std::lock_guard lock(b.state_mutex);
@@ -476,10 +490,31 @@ void dispatch(void* controller,std::uint64_t data,std::uint64_t a3,std::uint64_t
         }catch(...) {owned_dispatch=own.previous;b.events.finish(record.token,false);b.fail("native_dispatch_exception");throw;}
     }
     if(claim.disposition==HandEventClaimDisposition::owned_evaluate)b.events.finish(record.token,called);
+    if(keypad_opened) {
+        // Native 78C7A0 stores C+558/560 and C+4BF/4C0 before Show35,
+        // even though a keypad does not send a type10 press. Clear24 only
+        // clears C+518, so the opening action must release its local hand
+        // state here. Keep C+518 intact for frontend submit/cancel.
+        bool attributable{};
+        {std::lock_guard lock(b.state_mutex);attributable=b.foreign_revision==foreign_before&&live==b.identity;}
+        const auto held=hand_held_offset(cert.action),down=hand_down_offset(cert.action);
+        const auto other=cert.action==HandAction::e?HandAction::q:HandAction::e;
+        if(attributable&&still_live(b,live)&&value<U>(live.controller,held)==cert.target_token&&
+           value<unsigned char>(live.controller,down)==1&&zero_byte(live.controller,hand_down_offset(other))&&
+           value<U>(live.controller,hand_held_offset(other))==0&&value<U>(live.controller,0x550)==0&&
+           accessible(live.controller+held,sizeof(U),true)&&accessible(live.controller+down,1,true)) {
+            const U empty{};const unsigned char up{};
+            std::memcpy(reinterpret_cast<void*>(live.controller+held),&empty,sizeof(empty));
+            std::memcpy(reinterpret_cast<void*>(live.controller+down),&up,1);
+            {std::lock_guard lock(b.state_mutex);++b.counters.keypad_hand_releases;}
+            b.note("keypad_hand_release","local_state_only",&cert);
+        }else b.fail("keypad_hand_ownership_changed");
+        accepted=false; // No ordinary button hold or type10 release for Show35.
+    }
     // Native phase1 raises the down flag before its actor/health/distance gates.
     // A rejected own call has no component hold to release. Undo only that flag
     // when no external Action20 or competing native hold can own it.
-    if(called&&!accepted) {
+    if(called&&!accepted&&!keypad_opened) {
         bool attributable{};{std::lock_guard lock(b.state_mutex);attributable=b.foreign_revision==foreign_before&&live==b.identity;}
         if(attributable&&still_live(b,live)&&zero_byte(live.controller,hand_down_offset(cert.action))==false&&
            value<U>(live.controller,0x558)==0&&value<U>(live.controller,0x560)==0&&value<U>(live.controller,0x550)==0&&

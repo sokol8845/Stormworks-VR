@@ -20,6 +20,11 @@ struct NativeHandButtonsStats {
     // healthy. A blocked hold is retained metadata, not permission to retry.
     const char* last_fault{"none"};
     std::uint64_t lifecycle_releases{};
+    // Keypad Show has local Q/E state but no type10 button request.
+    std::uint64_t keypad_hand_releases{};
+    // One diagnostic per denied pinch, excluding a known owned hold/event.
+    std::uint64_t selection_denials{};
+    const char* last_selection_denial{"none"};
     // Button types (0..6, 7=other) of newly selected Button targets, counted
     // once per target change; non_button_targets counts other components.
     std::array<std::uint64_t,8> targeted_types{};

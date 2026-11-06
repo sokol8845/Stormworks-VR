@@ -43,7 +43,7 @@ std::array<unsigned char,8> first_actor{},second_actor{};
 std::array<void*,7> detours{};
 unsigned deactivations{},replacements{};U held_at_transition{};bool replace_in_loop{},deactivate_in_loop{};
 U replace_call{},unknown_replace_call{},deactivate_call{},deactivate_state_call{};std::array<double,3> replacement_pose{1,2,3};
-bool throw_deactivation{},deactivate_in_action{};
+bool throw_deactivation{},deactivate_in_action{},competing_keypad_hold{};
 unsigned create_count{},remove_count{},fail_create{},action_count{},phase0_count{},loop_count{},dtor_count{};
 std::uint32_t last_dtor_flags{};
 bool consume_fifo=true,native_accept=true,reset_in_action{},publish_open_in_action{},physical_during_release{},throw_key_push{},throw_release_push{},reset_in_dtor{};
@@ -113,8 +113,10 @@ void native_action(void* c,std::uint64_t a2,std::uint64_t ctx,std::uint64_t a4,s
     if(phase==1) {
         put(controller,0x4bf,std::uint8_t{1});
         if(native_accept){const auto type=get<std::uint32_t>(get<U>(target,0x58),0xda4);
-            if(type==5||type==6)put(controller,0x518,target);
-            else {put(controller,0x558,target);put(controller,0x568,std::array<float,3>{.25f,.5f,.75f});}}
+            // 78C7A0 stores the hand hold BEFORE branching to keypad Show.
+            put(controller,0x558,target);put(controller,0x568,std::array<float,3>{.25f,.5f,.75f});
+            if(type==5||type==6){put(controller,0x518,target);
+                if(competing_keypad_hold){put(controller,0x560,target);put(controller,0x4c0,std::uint8_t{1});}}}
         if(change_actor_in_action){change_actor_in_action=false;actor_holder=reinterpret_cast<U>(second_actor.data());}
         if(deactivate_in_action){deactivate_in_action=false;reinterpret_cast<Deactivate>(deactivate_call)(reinterpret_cast<void*>(sim),0x2233,reinterpret_cast<void*>(data),reinterpret_cast<const int*>(owner+0x358));}
         if(reset_in_action){reset_in_action=false;bridge.reset();reset_native_hand_buttons();}
@@ -318,7 +320,48 @@ void normal_tests() {
     }
 }
 void isolated_test(const std::string& name) {
-    if(name=="deactivate_hold" || name=="deactivate_state_hold" || name=="replace_local_hold") {
+    if(name=="denied_press_diagnostic") {
+        put(controller,0x4bf,std::uint8_t{1});begin();tick();
+        const auto first=native_hand_buttons_stats();
+        require(first.selection_denials==1&&std::string(first.last_selection_denial)=="native_hand_down",
+            "blocked click did not report its native gate");
+        for(int i=0;i<100;++i){publish(.01f);selection();tick();}
+        require(native_hand_buttons_stats().selection_denials==1,"held pinch flooded the diagnostic log");
+        put(controller,0x4bf,std::uint8_t{});accepted();publish();tick();consume_requests();
+    }else if(name=="keypad_then_button") {
+        enable_native_keypad_opening(true);
+        const auto definition=get<U>(target,0x58);
+        for(std::uint32_t type:{5u,6u}) {
+            put(definition,0xda4,type);begin();tick();
+            require(get<U>(controller,0x518)==target,"keypad did not open");
+            bridge.reset();reset_native_hand_buttons();
+            // Frontend OK/Cancel queues Clear24. Its native handler at 79337E
+            // clears only C+518; it does not release C+558/560 or C+4BF/4C0.
+            put(controller,0x518,U{});
+            put(definition,0xda4,std::uint32_t{0});
+            const auto before=native_hand_buttons_stats().presses_accepted;
+            begin();tick();
+            require(native_hand_buttons_stats().presses_accepted==before+1&&native_hand_buttons_stats().own_hold,
+                "vehicle button stayed blocked after keypad OK/Clear24");
+            publish();tick();consume_requests();
+        }
+    }else if(name=="keypad_actor_changed" || name=="keypad_competing_hold" || name=="keypad_reset") {
+        enable_native_keypad_opening(true);put(get<U>(target,0x58),0xda4,std::uint32_t{5});
+        change_actor_in_action=name=="keypad_actor_changed";
+        competing_keypad_hold=name=="keypad_competing_hold";reset_in_action=name=="keypad_reset";
+        begin();tick();const auto state=native_hand_buttons_stats();
+        require(requests.empty()&&get<U>(controller,0x518)==target,"keypad cleanup sent type10 or removed the session");
+        if(name=="keypad_reset") {
+            require(!state.blocked&&!state.own_hold&&state.keypad_hand_releases==1&&
+                !get<U>(controller,0x558)&&!get<std::uint8_t>(controller,0x4bf),"reset lost the attributable keypad opening state");
+        }else {
+            require(state.blocked&&state.keypad_hand_releases==0&&std::string(state.last_fault)=="keypad_hand_ownership_changed"&&
+                get<U>(controller,0x558)==target&&get<std::uint8_t>(controller,0x4bf)==1,
+                "keypad cleanup cleared a changed character or competing hand's state");
+            if(competing_keypad_hold)require(get<U>(controller,0x560)==target&&get<std::uint8_t>(controller,0x4c0)==1,"competing Q was cleared");
+            tick();require(requests.empty(),"uncertain keypad cleanup retried as type10");
+        }
+    }else if(name=="deactivate_hold" || name=="deactivate_state_hold" || name=="replace_local_hold") {
         accepted();
         if(name!="replace_local_hold")reinterpret_cast<Deactivate>(name=="deactivate_state_hold"?deactivate_state_call:deactivate_call)(reinterpret_cast<void*>(sim),0x2233,reinterpret_cast<void*>(data),reinterpret_cast<const int*>(owner+0x358));
         else {replace_in_loop=true;tick();}
@@ -559,7 +602,9 @@ int main(int argc,char** argv) {
         require(create_count==7&&action_count==0&&allocations.empty(),"lifecycle hook installation incomplete or called native helpers");init_thunks();
         require(install_native_hand_buttons(base,true,installed_trace,bridge)==NativeHandButtonsStatus::already_installed,"duplicate install replaced state");
         if(argc>1)isolated_test(argv[1]);else {
-            normal_tests();run_child(L"external_same_target");run_child(L"uncertain_request");run_child(L"uncertain_key");run_child(L"lost_context");run_child(L"reset_before_submit");
+            normal_tests();run_child(L"keypad_then_button");run_child(L"denied_press_diagnostic");
+            for(const auto name:{L"keypad_actor_changed",L"keypad_competing_hold",L"keypad_reset"})run_child(name);
+            run_child(L"external_same_target");run_child(L"uncertain_request");run_child(L"uncertain_key");run_child(L"lost_context");run_child(L"reset_before_submit");
             const std::array lifecycle_cases{L"world_changed_hold",L"character_changed_hold",L"character_missing_hold",L"world_changed_pending",L"character_changed_pending",
                 L"removed_target",L"replaced_held_target",L"pause_hold",L"ui_hold",L"hover_changed_hold",L"physical_during_ui",L"xr_shutdown_pending",L"xr_shutdown_hold",
                 L"context_lost_pending",L"character_changed_before_action",L"character_changed_in_action",L"character_changed_during_capture",L"character_changed_during_release"};

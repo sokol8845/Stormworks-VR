@@ -340,6 +340,8 @@ void poll_hand_button_shutdown() noexcept {
             " faults="+std::to_string(buttons.faults)+" pending="+std::to_string(buttons.pending_events)+
             " own_hold="+std::to_string(buttons.own_hold)+" blocked="+std::to_string(buttons.blocked)+
             " last_fault="+buttons.last_fault+" lifecycle_releases="+std::to_string(buttons.lifecycle_releases)+
+            " keypad_hand_releases="+std::to_string(buttons.keypad_hand_releases)+
+            " selection_denials="+std::to_string(buttons.selection_denials)+" last_selection_denial="+buttons.last_selection_denial+
             " non_button_targets="+std::to_string(buttons.non_button_targets)+" targeted_types="+[&]{
                 std::string list;for(std::size_t i=0;i<buttons.targeted_types.size();++i)list+=(i?",":"")+std::to_string(buttons.targeted_types[i]);return list;}();
         xr_note("hand_buttons_totals",counts.c_str());

@@ -1,5 +1,11 @@
 # Natywna klawiatura numeryczna — badanie offline 2026-11-04
 
+**Korekta po próbie 2026-11-06:** otwarcie 5/6 zapisuje również natywny
+wskaźnik trzymania Q/E i bajt naciśnięcia, jeszcze przed gałęzią Show35.
+Clear24 zeruje tylko `controller+518`. Adapter zwalnia teraz własny lokalny
+stan dłoni po otwarciu, bez type10; wcześniej brak tego sprzątania blokował
+przyciski po OK. [Dowód i regresja](keypad-release-fix-20261106.md).
+
 **Uzupełnienie 2026-11-06:** rozpoznano właściciela frontendowego i podłączono
 adapter. `84D010(owner, graphics, D)` zawiera wywołanie `7B6060` z S pobranym
 z `owner+CE190`, bieżącym D, D+280 i kolejką `owner+CE6B8`. Dowód:
