@@ -1,0 +1,16 @@
+/build/
+/artifacts/
+/third_party/
+/tools/runtime/
+/tools/rea/
+/tools/ghidra/
+/tools/jdk/
+__pycache__/
+*.pyc
+/tmp/
+.pytest_cache/
+# Per-user body calibration and local credentials never belong to the source tree.
+/config/avatar-calibration.ini
+.env
+.env.*
+!.env.example

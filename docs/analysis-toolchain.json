@@ -1,0 +1,35 @@
+{
+  "installed_at": "2026-10-28",
+  "scope": "Local tools directory; no global Node, Java or MCP configuration changes",
+  "node": {
+    "version": "22.23.4",
+    "package": "node@22.23.4",
+    "registry": "https://registry.npmjs.org",
+    "lockfile": "tools/runtime/package-lock.json"
+  },
+  "rea": {
+    "version": "6.8.0",
+    "source": "https://github.com/morluto/rea",
+    "package": "rea-agents@6.8.0",
+    "integrity": "sha512-9QDeRnGqEDzABZyr04eLnBXBv/c6I9/TWu/6M0MD4pEfkySI/BIgwTODIbAReX3C1x6hjw9+Jlx4A2yUSPZ9ww==",
+    "lockfile": "tools/rea/package-lock.json",
+    "dependency_install_scripts": false
+  },
+  "ghidra": {
+    "version": "12.1.4",
+    "url": "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/ghidra_12.1.4_PUBLIC_20260921.zip",
+    "sha256": "ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db",
+    "checksum_verified": true
+  },
+  "jdk": {
+    "version": "21.0.12.1+1",
+    "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_windows_hotspot_21.0.12.1_1.zip",
+    "sha256": "f9d6e191ab098c0d416e7d588a24420a8621cd2f4720dab2459b8b7b2d2d8b4e",
+    "checksum_verified": true
+  },
+  "readiness": {
+    "command": "scripts/rea.ps1 doctor --provider ghidra --format json",
+    "healthy": true,
+    "artifact": "artifacts/rea-ghidra-doctor.json"
+  }
+}

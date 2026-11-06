@@ -1,0 +1,26 @@
+{
+  "repository": "KhronosGroup/OpenXR-SDK",
+  "ref": "release-1.1.53",
+  "files": [
+    {
+      "path": "include/openxr/openxr.h",
+      "sha": "179e2aecbee05e0d9e81f659794be1101a951e44",
+      "url": "https://github.com/KhronosGroup/OpenXR-SDK/blob/release-1.1.53/include/openxr/openxr.h"
+    },
+    {
+      "path": "include/openxr/openxr_platform.h",
+      "sha": "852b56736e6137b33fbcd5641422f42f14b3ff8f",
+      "url": "https://github.com/KhronosGroup/OpenXR-SDK/blob/release-1.1.53/include/openxr/openxr_platform.h"
+    },
+    {
+      "path": "include/openxr/openxr_platform_defines.h",
+      "sha": "a8f7e5e06eea79ac41f509e8f7c44540e28137a5",
+      "url": "https://github.com/KhronosGroup/OpenXR-SDK/blob/release-1.1.53/include/openxr/openxr_platform_defines.h"
+    },
+    {
+      "path": "LICENSE",
+      "sha": "d645695673349e3947e8e5ae42332d0ac3164cd7",
+      "url": "https://github.com/KhronosGroup/OpenXR-SDK/blob/release-1.1.53/LICENSE"
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "repository": "TsudaKageyu/minhook",
+  "ref": "8af6b4acae5a9388fd742b56fa79ece89d96f823",
+  "files": [
+    {
+      "path": "LICENSE.txt",
+      "sha": "74dea27229c05b53b095aa22b9ee7ee9f549e414"
+    },
+    {
+      "path": "include/MinHook.h",
+      "sha": "ae393508b8852dad600c22ebdfddd54ec133ace4"
+    },
+    {
+      "path": "src/buffer.c",
+      "sha": "d2850bfc482c326399784ea24d27957514326f49"
+    },
+    {
+      "path": "src/buffer.h",
+      "sha": "204d551bffb7f11760bc1e474aa835e55f4cbb00"
+    },
+    {
+      "path": "src/hde/hde32.c",
+      "sha": "cc5e5e55ce31accd6172aca91bcb543a09f92882"
+    },
+    {
+      "path": "src/hde/hde32.h",
+      "sha": "1112450d87ae6772ad805f4f7fa07965c5bbbdb0"
+    },
+    {
+      "path": "src/hde/hde64.c",
+      "sha": "cd7992f2f5ddd9cdd82cd116ae928e80f6399ee9"
+    },
+    {
+      "path": "src/hde/hde64.h",
+      "sha": "e7666853f1bdfc24c04d5eb06054b45a42f6cf54"
+    },
+    {
+      "path": "src/hde/pstdint.h",
+      "sha": "84d82a012311a72f5dfb1fc88554f7820fbdf216"
+    },
+    {
+      "path": "src/hde/table32.h",
+      "sha": "7c0951dc0b8fb99b862bfb0cc1195636a26011d9"
+    },
+    {
+      "path": "src/hde/table64.h",
+      "sha": "4ce61a3164f74bc9a257fdc67b4c4cc709fa3cde"
+    },
+    {
+      "path": "src/hook.c",
+      "sha": "06f56961f75c2680e779de4d2ff0a45a21cd9c24"
+    },
+    {
+      "path": "src/trampoline.c",
+      "sha": "cf8ce058b709547dadce7aa2f38ca9ba03595bfb"
+    },
+    {
+      "path": "src/trampoline.h",
+      "sha": "f7efb36081e52aaed2040930e105bfbf1996c82a"
+    }
+  ]
+}
