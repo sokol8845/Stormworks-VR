@@ -8,6 +8,9 @@ struct Fixture {HandSteering steering;GestureSettings settings;std::uint64_t id{
     void grip(){step(0,false,false);check(step(0).active,"two-hand grip did not arm");}
 };
 int main(){try{
+    {Fixture f;f.settings.steering={45,5,0};f.grip();f.step(.04f);check(f.steering.inspect(f.now).axis==0,"configured dead zone ignored");for(int i=2;i<=16;++i)f.step(i*.05f);auto command=f.steering.inspect(f.now);check(command.axis>.999f&&std::abs(command.angle_radians-.785398f)<.001f,"full lock and visual angle disagree");}
+    {Fixture f;f.settings.steering={180,0,0};f.grip();for(int i=1;i<=60;++i)f.step(i*.05f);auto command=f.steering.inspect(f.now);check(command.angle_radians>2.9f&&command.axis>.9f,"extended steering range clamped at 90 degrees");}
+    {Fixture slow,fast;slow.settings.steering.smoothing_ms=200;fast.settings.steering.smoothing_ms=0;slow.grip();fast.grip();check(slow.step(.1f).axis<fast.step(.1f).axis*.2f,"smoothing preference ignored");}
     {Fixture f;check(!f.step(0).active,"closed hands on entry grabbed without opening");f.grip();for(int i=1;i<=15;++i)f.step(i*.05f);check(f.steering.inspect(f.now).axis>.35f,"clockwise turn did not steer right");
      check(std::abs(f.steering.inspect(f.now).angle_radians-.75f)<.02f&&f.steering.inspect(f.now).seat==42,"wheel visual angle/seat missing");
      const float before=f.steering.inspect(f.now).axis;auto s=f.step(.75f,false,true);check(s.active&&!s.hands[0]&&s.hands[1]&&std::abs(s.axis-before)<.05f,"releasing one hand jumped steering");

@@ -54,6 +54,9 @@
 #include "swvr/hand_steering.hpp"
 #include "swvr/native_vehicle_keypad.hpp"
 #include "swvr/control_recording.hpp"
+#include "swvr/control_profiles.hpp"
+#include "swvr/control_diagnostics.hpp"
+#include "swvr/flight_recorder.hpp"
 #include "swvr/performance.hpp"
 #include "swvr/gl_gpu_timer.hpp"
 #include "swvr/ui_click_sound.hpp"
@@ -520,6 +523,35 @@ struct NativeVr {
     swvr::Vec3 neck_reference{};
     swvr::Pose view_origin{};
     swvr::ControlRecording control_recording;
+    swvr::FlightRecorder flight_recorder;
+    bool diagnostics_enabled{},mark_problem_pending{},flight_error_noted{};
+    std::uint64_t flight_notified{};
+    Clock::time_point last_diagnostic{};
+    void update_diagnostics(){
+        const auto now=Clock::now();
+        const auto stats=flight_recorder.stats();
+        if(stats.saved>flight_notified){flight_notified=stats.saved;settings_menu.message("PROBLEM ZAPISANY LOKALNIE");menu_feedback_until=now+std::chrono::seconds(3);
+            xr_note("problem_saved",("marker="+std::to_string(stats.saved)+" slot="+std::to_string((stats.saved-1)%3+1)).c_str());}
+        if(stats.failed&&!flight_error_noted){flight_error_noted=true;settings_menu.message("BLAD NAGRANIA - SPRAWDZ LOG");menu_feedback_until=now+std::chrono::seconds(3);xr_note("flight_recording_error","Worker failed; observations may be incomplete");}
+        if(!diagnostics_enabled&&!record_hands_requested&&!mark_problem_pending)return;
+        if(!mark_problem_pending&&last_diagnostic!=Clock::time_point{}&&now-last_diagnostic<std::chrono::milliseconds(100))return;
+        last_diagnostic=now;
+        swvr::ControlDiagnostics d;d.frame=current.id;d.camera_current=base_cameras_valid;
+        d.menu=settings_menu.snapshot().visible;d.keypad=keypad.snapshot().visible;d.calibration=calibration_guided||t_pose_hold.holding();d.settings_pending=gestures_suspended;
+        d.seated=swvr::native_steering_seat()!=0;d.movement=hand_locomotion.diagnostic_command();d.movement_hands=hand_locomotion.reserved_hand_actions();
+        d.steering=hand_steering.diagnostic_command();d.turn_degrees_per_second=hand_turn.rate()*57.2957795f;d.turning_hand=hand_turn.using_hand();
+        if(!d.camera_current){d.movement={};d.steering={};d.turn_degrees_per_second=0;d.turning_hand=false;d.movement_hands={};}
+        d.pointing=hand_interactions.inspect();const auto buttons=swvr::native_hand_buttons_stats();
+        d.accepted=buttons.presses_accepted;d.denied=buttons.selection_denials;d.pending=buttons.pending_events;d.blocked=buttons.blocked;d.own_hold=buttons.own_hold;d.last_denial=buttons.last_selection_denial;
+        auto lines=swvr::control_diagnostic_lines(current,active_gesture_settings,d);
+        if(diagnostics_enabled)hand_overlay.diagnostics(lines);
+        const auto elapsed_ms=GetTickCount64()-started;
+        if(record_hands_requested)flight_recorder.sample(current,active_gesture_settings,elapsed_ms,std::move(lines));
+        if(std::exchange(mark_problem_pending,false)){
+            const bool queued=flight_recorder.mark(elapsed_ms,current.id);settings_menu.message(queued?"ZAPIS PROBLEMU W TOKU":"BRAK NAGRANIA DO ZAPISU");menu_feedback_until=now+std::chrono::seconds(3);
+            xr_note("problem_marker",queued?"queued":"unavailable");
+        }
+    }
     swvr::PerformanceReport performance;
     swvr::GlGpuTimer gpu_timer;
     swvr::UiClickSound click_sound;
@@ -581,6 +613,8 @@ struct NativeVr {
             settings_menu.record_to(&control_recording);keypad.record_to(&control_recording);menu_summon.record_to(&control_recording);hand_turn.record_to(&control_recording);
             xr_note("hand_recording","journal_v3_limit_64MiB");
         }catch(const std::exception& e){xr_note("hand_recording_error",e.what());}
+        if(record_hands_requested)try{flight_recorder.open(diagnostic_base.wstring()+L".flight");xr_note("flight_recording","rolling_6x30s_8MiB_10Hz_incidents_3");}
+        catch(const std::exception& e){xr_note("flight_recording_error",e.what());}
         {const auto stats=avatar_pose.stats();last_avatar_cpu=stats.pose_cpu_ms;initial_cache_hits=stats.cache_hits;initial_pose_calls=stats.pose_calls;}
         if(hand_ray_active && swvr::rearm_native_hand_ray_log())
             xr_note("hand_ray_log","rearmed_at_vr_start");
@@ -678,7 +712,7 @@ struct NativeVr {
         if(work_measured)gpu_timer.begin(current.id,static_cast<double>(current.predicted_display_period_ns)/1e6);
         flush_locomotion_journal(hand_recording);
         const bool was_seated=active_gesture_settings.comfort.seated;
-        if(poll_gesture_change(hand_recording,hand_overlay,std::exchange(menu_change,{}))){hand_turn.reset();control_feedback_until=Clock::now()+std::chrono::milliseconds(1500);menu_feedback_until=control_feedback_until;settings_menu.message(gesture_notice_text);}
+        if(poll_gesture_change(hand_recording,hand_overlay,std::exchange(menu_change,{}))){hand_turn.reset();hand_steering.reset();control_feedback_until=Clock::now()+std::chrono::milliseconds(1500);menu_feedback_until=control_feedback_until;settings_menu.message(gesture_notice_text);}
         if(was_seated!=active_gesture_settings.comfort.seated){head_recenter_pending=true;calibrated_head_position.reset();comfort_motion.reset();}
         const auto next_priority=static_cast<unsigned>(active_gesture_settings.input.pointing_priority);
         if(panel_priority!=next_priority){panel_priority=next_priority;settings_menu.set_preferred_hand(panel_priority);keypad.set_preferred_hand(panel_priority);}
@@ -691,6 +725,7 @@ struct NativeVr {
             }
         }
         if(settings_menu.snapshot().visible){
+            settings_menu.diagnostics_enabled(diagnostics_enabled);
             settings_menu.status(active_gesture_settings,arm_swing_requested);
             if(Clock::now()>=menu_feedback_until)settings_menu.message({});
             if(const auto action=settings_menu.update(current)){
@@ -708,6 +743,18 @@ struct NativeVr {
                 case swvr::VrMenuAction::clear_profile:if(avatar_profile_clear_request)SetEvent(avatar_profile_clear_request);break;
                 case swvr::VrMenuAction::keypad:hand_overlay.status_text("WSKAZ KLAWIATURE POJAZDU I UZYJ Q/E LUB GESTU PRZYCISKU",std::chrono::milliseconds(4000));control_feedback_until=Clock::now()+std::chrono::milliseconds(4000);xr_note("vehicle_keypad","select_vehicle_keypad");break;
                 case swvr::VrMenuAction::recenter:head_recenter_pending=true;calibrated_head_position.reset();comfort_motion.reset();settings_menu.cancel();break;
+                case swvr::VrMenuAction::profile_save:
+                case swvr::VrMenuAction::profile_load:
+                case swvr::VrMenuAction::profile_restore:try{
+                    if(gesture_config_path.empty()||gesture_changes.pending()||menu_change)throw std::runtime_error("Settings path missing or change pending");
+                    const swvr::ControlProfiles profiles(gesture_config_path.parent_path()/"control-profiles");
+                    const auto slot=settings_menu.selected_profile();
+                    if(*action==swvr::VrMenuAction::profile_save){profiles.save(slot,active_gesture_settings);settings_menu.message("PROFIL ZAPISANY / KOPIA POPRZEDNIEGO");xr_note("control_profile","saved");}
+                    else{next=profiles.load(slot,*action==swvr::VrMenuAction::profile_restore);next_mode=next.input.movement_fists?swvr::LocomotionMode::arm_swing:swvr::LocomotionMode::joystick;change=true;xr_note("control_profile",*action==swvr::VrMenuAction::profile_restore?"backup_requested":"load_requested");}
+                    menu_feedback_until=Clock::now()+std::chrono::seconds(3);
+                }catch(const std::exception& e){settings_menu.message("BRAK / BLAD PROFILU LUB ZMIANA W TOKU");menu_feedback_until=Clock::now()+std::chrono::seconds(3);xr_note("control_profile_error",e.what());}break;
+                case swvr::VrMenuAction::diagnostics_toggle:diagnostics_enabled=!diagnostics_enabled;settings_menu.diagnostics_enabled(diagnostics_enabled);settings_menu.status(active_gesture_settings,arm_swing_requested);if(!diagnostics_enabled)hand_overlay.diagnostics({});break;
+                case swvr::VrMenuAction::mark_problem:mark_problem_pending=true;break;
                 case swvr::VrMenuAction::close:break;
                 default:change=swvr::adjust_vr_preferences(*action,next);if(*action==swvr::VrMenuAction::defaults)next_mode=next.input.movement_fists?swvr::LocomotionMode::arm_swing:swvr::LocomotionMode::joystick;break;
                 }
@@ -822,6 +869,7 @@ struct NativeVr {
         const auto movement=hand_locomotion.inspect();
         const bool moving=!settings_menu.snapshot().visible&&!keypad.snapshot().visible&&!calibration_guided&&!gestures_suspended&&movement.active&&(movement.forward!=0||movement.sideways!=0);
         hand_overlay.comfort(comfort_motion.update(current,active_gesture_settings.comfort,moving,frame_turn,head_fade));
+        update_diagnostics();
         const auto submit_time=Clock::now();
         std::array<bool,2> completed{};
         bool repeated{};
@@ -882,6 +930,8 @@ struct NativeVr {
         flush_locomotion_journal(hand_recording,true);
         hand_recording.close();
         control_recording.close();
+        flight_recorder.close();
+        if(record_hands_requested){const auto stats=flight_recorder.stats();xr_note("flight_recording_totals",("samples="+std::to_string(stats.samples)+" dropped="+std::to_string(stats.dropped)+" rotations="+std::to_string(stats.rotations)+" markers="+std::to_string(stats.markers)+" saved="+std::to_string(stats.saved)+" failed="+std::to_string(stats.failed)).c_str());}
         if(record_hands_requested)xr_note("control_recording_totals",("limited="+std::to_string(control_recording.limited())+" failed="+std::to_string(control_recording.failed())).c_str());
         try{gpu_timer.cancel();collect_gpu();const auto stats=avatar_pose.stats();performance.save(diagnostic_base.wstring()+L".performance.json",stats.cache_hits-initial_cache_hits,stats.pose_calls-initial_pose_calls,repeated_frames,empty_frames);xr_note("performance_report","written");}catch(const std::exception& e){xr_note("performance_report_error",e.what());}
         if(click_sound.failed())xr_note("menu_click_sound","audio_output_unavailable");

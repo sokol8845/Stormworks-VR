@@ -13,6 +13,7 @@ public:
     using Clock=std::chrono::steady_clock;
     void publish(const XrRuntimeFrame&,const GestureSettings&,std::uintptr_t seat,bool allowed,Clock::time_point now=Clock::now());
     SteeringCommand inspect(Clock::time_point now=Clock::time_point::max());
+    SteeringCommand diagnostic_command(){std::lock_guard lock(mutex_);return command_;}
     void reset();
 private:
     void clear(bool geometry);

@@ -36,6 +36,7 @@ struct XrRuntimeFrame {
     std::array<XrEyeFrame,2> eyes{};
     std::array<XrTrackedHand,2> hands{};
     std::int64_t predicted_display_period_ns{}; // Runtime scheduling period, not necessarily physical refresh.
+    bool system_input_suppressed{}; // Diagnostic reason for the runtime/palm guard.
 };
 // Poses/FOV (LOCAL space) the submitted images were actually rendered with.
 // Used to resubmit the previous images instead of an empty (black) frame; the

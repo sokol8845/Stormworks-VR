@@ -76,7 +76,7 @@ void GlDriverWheel::begin_eye(DriverSeatSnapshot seat,SteeringCommand command,Ma
     const bool fresh=seat.valid&&seat.seat&&seat.observed<=s.eye_time&&s.eye_time-seat.observed<=std::chrono::milliseconds(100)&&driver_wheel_rigid(seat.world)&&driver_wheel_rigid(expected);
     if(frame!=s.frame||seat.seat!=s.previous_seat){
         s.old_angle=fresh&&seat.seat==s.previous_seat?s.angle:0;
-        s.angle=fresh&&command.active&&command.seat==seat.seat&&std::isfinite(command.angle_radians)?std::clamp(command.angle_radians,-1.57079633f,1.57079633f):0;
+        s.angle=fresh&&command.active&&command.seat==seat.seat&&std::isfinite(command.angle_radians)?std::clamp(command.angle_radians,-3.14159265f,3.14159265f):0;
         s.frame=frame;s.previous_seat=fresh?seat.seat:0;
     }
     s.active=fresh&&(s.angle!=0||s.old_angle!=0);

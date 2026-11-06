@@ -21,6 +21,7 @@ bool suppress_system_hand_input(XrRuntimeFrame& frame,std::array<bool,2> reporte
             if((normal.x*to_head.x+normal.y*to_head.y+normal.z*to_head.z)/distance>.65f)suppress=true;
         }
     }catch(...){suppress=true;}
+    frame.system_input_suppressed=suppress;
     if(suppress)for(auto& hand:frame.hands)hand.active=false;
     return suppress;
 }

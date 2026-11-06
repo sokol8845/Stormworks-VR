@@ -32,6 +32,9 @@ void range(float value,float lo,float hi,const char* name) {
 void validate_gesture_settings(const GestureSettings& s) {
     for(const auto hand:{s.input.joystick_hand,s.input.pointing_priority})require(hand==GestureHand::left||hand==GestureHand::right,"Invalid hand preference");
     const auto& j=s.joystick;const auto& a=s.arm_swing;
+    range(s.steering.full_lock_degrees,30,180,"steering.full_lock_degrees");
+    range(s.steering.dead_zone_degrees,0,15,"steering.dead_zone_degrees");
+    range(s.steering.smoothing_ms,0,200,"steering.smoothing_ms");
     require(j.activation==JoystickActivation::whole_hand||j.activation==JoystickActivation::middle_pinch,"Invalid joystick activation");
     require(a.activation==RunActivation::two_fists||a.activation==RunActivation::alternating,"Invalid run activation");
     range(s.input.menu_distance_m,.6f,1.2f,"menu_distance_m");
@@ -59,6 +62,7 @@ void validate_gesture_settings(const GestureSettings& s) {
 GestureSettings parse_gesture_settings(std::string_view text,GestureSettings s) {
     auto& j=s.joystick;auto& a=s.arm_swing;
     const std::map<std::string,float*> floats{
+        {"steering.full_lock_degrees",&s.steering.full_lock_degrees},{"steering.dead_zone_degrees",&s.steering.dead_zone_degrees},{"steering.smoothing_ms",&s.steering.smoothing_ms},
         {"input.menu_scale",&s.input.menu_scale},{"comfort.vignette_strength",&s.comfort.vignette_strength},{"comfort.vignette_radius_degrees",&s.comfort.vignette_radius_degrees},
         {"turn.speed_degrees",&s.turn.speed_degrees},{"turn.dead_zone_m",&s.turn.dead_zone_m},{"turn.full_deflection_m",&s.turn.full_deflection_m},
         {"joystick.dead_zone_m",&j.dead_zone_m},{"joystick.full_deflection_m",&j.full_deflection_m},
@@ -76,7 +80,7 @@ GestureSettings parse_gesture_settings(std::string_view text,GestureSettings s) 
         if(value.empty()||value.front()=='#'||value.front()==';')continue;
         try {
             if(value.front()=='['&&value.back()==']') {
-                section=trim(value.substr(1,value.size()-2));require(section=="joystick"||section=="arm_swing"||section=="input"||section=="turn"||section=="comfort","Unknown section");continue;
+                section=trim(value.substr(1,value.size()-2));require(section=="joystick"||section=="arm_swing"||section=="input"||section=="turn"||section=="comfort"||section=="steering","Unknown section");continue;
             }
             const auto eq=value.find('=');require(eq!=value.npos,"Expected key=value");
             const auto key=section+"."+std::string(trim(value.substr(0,eq)));value=trim(value.substr(eq+1));
@@ -122,6 +126,7 @@ std::string describe_gesture_settings(const GestureSettings& s) {
        <<" movement_mode="<<(s.input.movement_fists?"fists":"joystick")<<" dwell_ms="<<s.input.dwell_ms<<" menu_scale="<<s.input.menu_scale<<" click_sound="<<(s.input.click_sound?"true":"false")
        <<" turn_speed_degrees="<<s.turn.speed_degrees<<" turn_dead_zone_m="<<s.turn.dead_zone_m<<" turn_full_deflection_m="<<s.turn.full_deflection_m<<" turn_snap="<<(s.turn.snap?"true":"false")<<" turn_snap_degrees="<<s.turn.snap_degrees
        <<" comfort_head_fade="<<(s.comfort.head_fade?"true":"false")<<" comfort_seated="<<(s.comfort.seated?"true":"false")<<" comfort_vignette_strength="<<s.comfort.vignette_strength<<" comfort_vignette_radius_degrees="<<s.comfort.vignette_radius_degrees;
+    out<<" steering_full_lock_degrees="<<s.steering.full_lock_degrees<<" steering_dead_zone_degrees="<<s.steering.dead_zone_degrees<<" steering_smoothing_ms="<<s.steering.smoothing_ms;
     return out.str();
 }
 std::string format_gesture_settings_ini(const GestureSettings& s){
@@ -131,6 +136,8 @@ std::string format_gesture_settings_ini(const GestureSettings& s){
         if(field.starts_with("turn_")){out<<field.substr(5)<<'\n';continue;}
         if(field.starts_with("comfort_head_fade="))out<<"[comfort]\n";
         if(field.starts_with("comfort_")){out<<field.substr(8)<<'\n';continue;}
+        if(field.starts_with("steering_full_lock_degrees="))out<<"[steering]\n";
+        if(field.starts_with("steering_")){out<<field.substr(9)<<'\n';continue;}
         if(field.starts_with("joystick_activation=")){out<<"activation="<<field.substr(20)<<'\n';continue;}
         if(field.starts_with("joystick_forward_only=")){out<<"forward_only="<<field.substr(22)<<'\n';continue;}
         if(field.starts_with("joystick_hand="))out<<"[input]\n";out<<field<<'\n';}return out.str();

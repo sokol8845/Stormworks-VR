@@ -7,12 +7,15 @@ Eksperymentalny mod PCVR pod Windows x64, Meta Quest 3 i OpenXR ze śledzeniem g
 ## Obecny stan
 
 Najświeższy skrót: [stan pracy z 2026-11-06](docs/stan-pracy.md).
+Nowe **MENU → NARZEDZIA** zawiera ustawienia kierownicy, profile sterowania,
+diagnostykę i zapis ostatnich minut do analizy problemu.
+[Obsługa i limity nagrań](docs/offline-tools-20261106.md).
 Dodano analogowe kręcenie kierownicą po oburęcznym chwycie oraz panel VR
 połączony z małymi i dużymi klawiaturami numerycznymi pojazdów.
 W najnowszej próbie użytkownik potwierdził skręt kół i puszczanie chwytu.
 Naprawiono blokadę przycisków po OK klawiatury i dodano
 [animację modelu kierownicy Driver seat](docs/driver-wheel-animation-20261106.md).
-Aktualne testy offline: **56/56 CTest**, **51/51 Python**, **78 kontroli EXE**,
+Aktualne testy offline: **58/58 CTest**, **64/64 Python**, **78 kontroli EXE**,
 w tym obrót geometrii prawdziwego fotela na GPU. Użytkownik potwierdził potem
 działanie animacji kierownicy w goglach. Dodano też
 [przełącznik chodzenia tylko do przodu i poprawkę początkowego kierunku ciała](docs/forward-only-and-heading-20261106.md),

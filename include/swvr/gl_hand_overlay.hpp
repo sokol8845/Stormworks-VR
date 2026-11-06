@@ -35,6 +35,7 @@ public:
     void keypad(const KeypadSnapshot&);
     void menu_button(const PanelSnapshot&);
     void comfort(ComfortVisual);
+    void diagnostics(std::vector<std::string> lines);
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

@@ -102,7 +102,9 @@ struct GlHandOverlay::Impl {
     HGLRC context{};DWORD thread{};
     std::array<float,3> flash_color{};std::chrono::steady_clock::time_point flash_until{};
     std::array<float,3> status_color{};std::chrono::steady_clock::time_point status_until{};
-    std::string text;std::chrono::steady_clock::time_point text_until{};
+    std::string text;
+    std::vector<std::string> diagnostic_lines;
+    std::chrono::steady_clock::time_point diagnostic_until{},text_until{};
     float progress{};std::chrono::steady_clock::time_point progress_until{};
     KeypadSnapshot keypad;
     PanelSnapshot menu_button;
@@ -264,6 +266,7 @@ void GlHandOverlay::status_text(std::string_view text,std::chrono::milliseconds 
 void GlHandOverlay::progress(float value,std::chrono::milliseconds duration){if(!std::isfinite(value))throw std::invalid_argument("Invalid calibration progress");impl_->progress=std::clamp(value,0.f,1.f);impl_->progress_until=std::chrono::steady_clock::now()+duration;}
 void GlHandOverlay::keypad(const KeypadSnapshot& state){impl_->keypad=state;}
 void GlHandOverlay::menu_button(const PanelSnapshot& state){impl_->menu_button=state;}
+void GlHandOverlay::diagnostics(std::vector<std::string> lines){if(lines.size()>8)lines.resize(8);for(auto& line:lines)if(line.size()>48)line.resize(48);impl_->diagnostic_lines=std::move(lines);impl_->diagnostic_until=std::chrono::steady_clock::now()+std::chrono::milliseconds(250);}
 void GlHandOverlay::comfort(ComfortVisual visual){
     if(!std::isfinite(visual.fade)||!std::isfinite(visual.vignette)||!std::isfinite(visual.radius_degrees))throw std::invalid_argument("Invalid comfort visual");
     visual.fade=std::clamp(visual.fade,0.f,1.f);visual.vignette=std::clamp(visual.vignette,0.f,1.f);visual.radius_degrees=std::clamp(visual.radius_degrees,25.f,60.f);impl_->comfort=visual;
@@ -343,6 +346,13 @@ void GlHandOverlay::draw(const XrRuntimeFrame& frame,bool pointing_ray,unsigned 
         if(!k.compact){const auto footer=k.help_mode?"POMOC - ? WLACZA KLIKANIE":k.release_required?(k.direct_touch?"COFNIJ PALEC PRZED KOLEJNYM":"ODSUN PROMIEN PRZED KOLEJNYM"):k.hover<0?"DOTKNIJ / WSKAZ I PRZYTRZYMAJ":k.direct_touch?"DOTYK":"WSKAZUJ DO KONCA PASKA";
             text_vertices(vertices,k.panel,footer,-.21f*scale,-.308f*scale,0,.002f*scale,{.8f,.8f,.8f});
             if(!k.help_mode&&!k.notice.empty())text_vertices(vertices,k.panel,k.notice,-.21f*scale,-.35f*scale,0,.00175f*scale,{.8f,1.f,.8f});}
+    }
+    if(!impl_->diagnostic_lines.empty()&&std::chrono::steady_clock::now()<impl_->diagnostic_until){
+        const auto centre=stereo_center({frame.eyes[0].pose,frame.eyes[1].pose});
+        // Read-only display to the right of the interactive menu; no hit targets.
+        rectangle(vertices,centre,.75f,.02f,-1.2f,.78f,.30f,{.25f,.65f,1.f});
+        for(std::size_t row=0;row<impl_->diagnostic_lines.size();++row)
+            text_vertices(vertices,centre,impl_->diagnostic_lines[row],.38f,.14f-static_cast<float>(row)*.034f,-1.2f,.0025f,{.8f,1.f,.85f});
     }
     const bool effect=impl_->comfort.fade>0||impl_->comfort.vignette>0;
     if(vertices.empty()&&!effect)return;

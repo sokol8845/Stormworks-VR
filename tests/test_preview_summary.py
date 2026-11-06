@@ -88,6 +88,24 @@ def test_unresolved_button_ownership_is_reported(tmp_path):
     assert "requesty.retained=1" in report["errors"]
 
 
+def test_current_hook_state_checks_button_release(tmp_path):
+    text = BASE + "#hand_buttons\thooks_created\n#hand_buttons_totals\tfaults=0 pending=1 own_hold=1 blocked=0\n#button_retirement_totals\tretained=1 quarantined=0\n"
+    report = summarize(fixture(tmp_path, text))
+    assert "przyciski.pending=1" in report["errors"]
+    assert "przyciski.own_hold=1" in report["errors"]
+    assert "zwolnienie przycisków dłoni" in report["missing_evidence"]
+
+
+def test_native_keypad_and_wheel_are_not_reported_as_local_prototype(tmp_path):
+    text = BASE + "#keypad_prototype\tready\n#vehicle_keypad_totals\topened=3 submitted=3 cancelled=0 rejected=0 faults=0\n#driver_wheel_totals\teyes=100 identified=20 draws=40 compile_fallbacks=0\n#control_recording_totals\tlimited=1 failed=0\n"
+    report = summarize(fixture(tmp_path, text))
+    output = markdown(report)
+    assert "prototyp lokalny" not in output
+    assert "Klawiatura pojazdu" in output and "submitted=3" in output
+    assert "Kierownica" in output and "identified=20" in output
+    assert any("sterowania" in warning and "limit" in warning for warning in report["warnings"])
+
+
 def test_cli_writes_both_reports_without_modifying_sources(tmp_path):
     capture = fixture(tmp_path)
     script = Path(__file__).resolve().parents[1] / "tools/summarize_preview.py"
@@ -97,6 +115,13 @@ def test_cli_writes_both_reports_without_modifying_sources(tmp_path):
     assert "Raport próby VR" in Path(str(capture) + ".summary.md").read_text(encoding="utf-8")
     failed = subprocess.run([sys.executable, str(script), str(capture), "--json", str(capture)], capture_output=True)
     assert failed.returncode != 0 and capture.read_bytes() == original
+
+
+def test_rolling_capture_reports_lost_samples_and_unfinished_marker(tmp_path):
+    report = summarize(fixture(tmp_path, BASE + "#flight_recording_totals\tsamples=10 dropped=2 rotations=3 markers=2 saved=1 failed=1\n"))
+    assert "bufor_diagnostyczny.failed=1" in report["errors"]
+    assert "zapis wszystkich oznaczonych problemów" in report["missing_evidence"]
+    assert any("pominął próbki: 2" in value for value in report["warnings"])
 
 
 def test_usability_diagnostics_preserve_modes_and_local_keypad_scope(tmp_path):

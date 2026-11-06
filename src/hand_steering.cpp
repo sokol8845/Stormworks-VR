@@ -50,10 +50,13 @@ void HandSteering::publish(const XrRuntimeFrame& f,const GestureSettings& settin
         }
         command_.active=command_.hands[0]||command_.hands[1];
         if(!command_.active){angle_=0;command_={};return;}
-        if(contributors)angle_=std::clamp(angle_+sum/static_cast<float>(contributors),-pi/2,pi/2);
+        const auto& preferences=settings.steering;
+        const float lock_angle=preferences.full_lock_degrees*pi/180.f,dead_angle=preferences.dead_zone_degrees*pi/180.f;
+        if(!std::isfinite(lock_angle)||!std::isfinite(dead_angle)||!std::isfinite(preferences.smoothing_ms)||lock_angle<=dead_angle||preferences.smoothing_ms<0){clear(true);return;}
+        if(contributors)angle_=std::clamp(angle_+sum/static_cast<float>(contributors),-lock_angle,lock_angle);
         command_.angle_radians=angle_;command_.seat=seat_;
-        const float target=std::copysign(std::clamp((std::abs(angle_)-.025f)/(pi/2-.025f),0.f,1.f),angle_);
-        const float blend=1.f-std::exp(-static_cast<float>(dt)*1e-9f/.04f);
+        const float target=std::copysign(std::clamp((std::abs(angle_)-dead_angle)/(lock_angle-dead_angle),0.f,1.f),angle_);
+        const float blend=preferences.smoothing_ms==0?1.f:1.f-std::exp(-static_cast<float>(dt)*1e-6f/preferences.smoothing_ms);
         command_.axis+=blend*(target-command_.axis);
     }catch(...){clear(true);}
 }

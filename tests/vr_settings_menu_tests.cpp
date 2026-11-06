@@ -34,6 +34,16 @@ int main(){try{
     check(preferences.click(VrMenuAction::turn_toggle)==VrMenuAction::turn_toggle,"snap toggle missing");
     check(!preferences.click(VrMenuAction::controls),"comfort back emitted external action");
     check(!preferences.click(VrMenuAction::back)&&preferences.menu.snapshot().title=="USTAWIENIA VR","back did not restore main menu");
+    Fixture tools;check(!tools.click(VrMenuAction::tools_page)&&tools.menu.snapshot().title=="NARZEDZIA","tools page missing");
+    check(tools.click(VrMenuAction::diagnostics_toggle)==VrMenuAction::diagnostics_toggle&&tools.click(VrMenuAction::mark_problem)==VrMenuAction::mark_problem,"diagnostic/marker action missing");
+    tools.click(VrMenuAction::steering_page);GestureSettings wheel;auto wheel_action=tools.click(VrMenuAction::wheel_lock_more);check(wheel_action&&adjust_vr_preferences(*wheel_action,wheel)&&wheel.steering.full_lock_degrees==105,"wheel settings not editable");
+    for(unsigned n=0;n<100;++n){adjust_vr_preferences(VrMenuAction::wheel_lock_more,wheel);adjust_vr_preferences(VrMenuAction::wheel_dead_more,wheel);adjust_vr_preferences(VrMenuAction::wheel_smooth_more,wheel);}
+    check(wheel.steering.full_lock_degrees==180&&wheel.steering.dead_zone_degrees==15&&wheel.steering.smoothing_ms==200,"wheel upper bounds");
+    for(unsigned n=0;n<100;++n){adjust_vr_preferences(VrMenuAction::wheel_lock_less,wheel);adjust_vr_preferences(VrMenuAction::wheel_dead_less,wheel);adjust_vr_preferences(VrMenuAction::wheel_smooth_less,wheel);}
+    check(wheel.steering.full_lock_degrees==30&&wheel.steering.dead_zone_degrees==0&&wheel.steering.smoothing_ms==0,"wheel lower bounds");
+    tools.click(VrMenuAction::tools_page);tools.click(VrMenuAction::profiles_page);check(!tools.click(VrMenuAction::profile_driving)&&tools.menu.selected_profile()==ControlProfile::driving,"slot selection applied external action");
+    check(tools.menu.snapshot().value.find("JAZDA")!=std::string::npos,"selected profile not shown");
+    for(auto action:{VrMenuAction::profile_save,VrMenuAction::profile_load,VrMenuAction::profile_restore})check(tools.click(action)==action,"profile host action missing");
     Fixture calibration;check(calibration.click(VrMenuAction::calibrate)==VrMenuAction::calibrate&&!calibration.menu.snapshot().visible,"guided calibration did not dismiss panel");
     Fixture disabled;disabled.menu.open(disabled.frame,{false,false,true},{},false);check(!disabled.click(VrMenuAction::arm_swing)&&!disabled.click(VrMenuAction::calibrate)&&!disabled.click(VrMenuAction::movement_page),"disabled action accepted");
     Fixture gesture;VrMenuSummon summon;gesture.pose(true);for(int i=0;i<60;++i)check(!gesture.summon(summon),"raised palms opened the application menu");

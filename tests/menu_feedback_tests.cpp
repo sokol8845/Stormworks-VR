@@ -29,8 +29,9 @@ int main(int argc,char** argv){unsigned failed{};const auto test=[&](const char*
     test("short pointing misses do not erase all dwell",[]{auto f=frame();PointingPanel p;const std::array<PanelButton,1> buttons{{{1,"TEST",0,0,.2f,.08f,true}}};p.open(f,buttons,"TEST");unsigned actions{};
         for(int n=0;n<70;++n){aim(f,p.snapshot(),n%12==10?.12f:0,0);const auto hit=p.update(f);if(n%12==10)check(!hit,"off-target pointer activated button");actions+=hit.has_value();}
         check(actions==1,"mostly steady visible pointing never completes after brief misses");});
-    test("help only describes every option on every page",[]{for(unsigned page=0;page<5;++page){auto f=frame();VrSettingsMenu m;m.open(f,{page==4,false,true},{},false);
-        if(page==4)click(m,f,VrMenuAction::movement_page);else {if(page)click(m,f,VrMenuAction::controls);if(page>1)click(m,f,page==2?VrMenuAction::interface_page:VrMenuAction::comfort_page);}
+    test("help only describes every option on every page",[]{for(unsigned page=0;page<8;++page){auto f=frame();VrSettingsMenu m;m.open(f,{page>=4,false,true},{},false);
+        if(page>=5){click(m,f,VrMenuAction::tools_page);if(page>5)click(m,f,page==6?VrMenuAction::steering_page:VrMenuAction::profiles_page);}
+        else if(page==4)click(m,f,VrMenuAction::movement_page);else {if(page)click(m,f,VrMenuAction::controls);if(page>1)click(m,f,page==2?VrMenuAction::interface_page:VrMenuAction::comfort_page);}
         click(m,f,VrMenuAction::help);check(m.snapshot().help_mode,"help did not enable");m.take_click();const auto title=m.snapshot().title;const auto buttons=m.snapshot().buttons;
         for(const auto& b:buttons){if(b.id==static_cast<int>(VrMenuAction::help))continue;
             for(int n=0;n<60;++n){aim(f,m.snapshot(),b.x,b.y);check(!m.update(f),"help executed an option");m.status({},false);}
@@ -39,7 +40,7 @@ int main(int argc,char** argv){unsigned failed{};const auto test=[&](const char*
             for(float z:{.06f,.006f}){f.hands[1].joints[10].pose.position=compose(m.snapshot().panel,Pose{{},{b.x,b.y,z}}).position;tick(f);check(!m.update(f),"touch in help executed an option");}
             check(!m.take_click(),"help touch produced click sound");
         }
-        click(m,f,VrMenuAction::help);check(!m.snapshot().help_mode,"help did not disable");const auto back=page==0?VrMenuAction::close:(page==1||page==4)?VrMenuAction::back:VrMenuAction::controls;click(m,f,back);check(page==0?!m.snapshot().visible:m.snapshot().title!=title,"normal controls did not return after help");
+        click(m,f,VrMenuAction::help);check(!m.snapshot().help_mode,"help did not disable");const auto back=page==0?VrMenuAction::close:page>=6?VrMenuAction::tools_page:(page==1||page==4||page==5)?VrMenuAction::back:VrMenuAction::controls;click(m,f,back);check(page==0?!m.snapshot().visible:m.snapshot().title!=title,"normal controls did not return after help");
     }});
     test("help preserves profile deletion confirmation",[]{auto f=frame();VrSettingsMenu m;m.open(f,{true,true,true},{},false);click(m,f,VrMenuAction::clear_profile);click(m,f,VrMenuAction::help);
         const auto b=m.snapshot().buttons[1];for(int n=0;n<60;++n){aim(f,m.snapshot(),b.x,b.y);check(!m.update(f),"help dismissed confirmation");}

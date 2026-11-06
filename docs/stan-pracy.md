@@ -1,5 +1,18 @@
 # Stan pracy — Stormworks VR (2026-11-06)
 
+## Pięć rozszerzeń offline: narzędzia, profile i zapis problemów
+
+Wdrożono **MENU → NARZEDZIA**: regulację kąta/martwej strefy/filtra
+kierownicy, trzy profile z kopią poprzedniej wersji, panel diagnostyczny
+i lokalne zapisy problemu. Bufor działa w tle i zachowuje około trzech
+ostatnich minut, także po zapełnieniu starych dzienników gestów. Dodano
+podgląd HTML i poprawiono raporty natywnej klawiatury oraz zwalniania przycisków.
+
+Release, **58/58 CTest**, **64/64 Python** i **78 kontroli EXE** przechodzą.
+Gra pozostała zamknięta; nowe funkcje czekają na ocenę w goglach.
+Lokalne ustawienia użytkownika w `config/gestures.ini` zachowano.
+[Obsługa, limity bufora i walidacja](offline-tools-20261106.md).
+
 ## Po próbie 20:00: kierownica działa, dodano ruch tylko do przodu
 
 Użytkownik potwierdził działanie animacji Driver seat. Grę zamknięto na

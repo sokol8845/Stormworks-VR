@@ -131,7 +131,7 @@ def summarize(capture, runtime="unknown"):
             if not swing.get("starts") or not movement.get("sprint"):
                 warnings.append("Brak potwierdzonego rozpoznania startu i wysłania żądania sprintu.")
     hands = totals.get("hand_buttons_totals", {})
-    if last("hand_buttons") == "installed":
+    if last("hand_buttons") in {"installed", "hooks_created"} or hands:
         if last("hand_buttons_drain") != "complete" or not hands:
             missing.append("zwolnienie przycisków dłoni")
         for key in ("faults", "pending", "own_hold", "blocked"):
@@ -147,6 +147,18 @@ def summarize(capture, runtime="unknown"):
         errors.append("nagranie.failed=1")
     if recorded.get("limited") == 1:
         warnings.append("Nagranie śledzenia osiągnęło limit rozmiaru; obejmuje początkową część próby.")
+    controls = totals.get("control_recording_totals", {})
+    if controls.get("failed") == 1:
+        errors.append("nagranie_sterowania.failed=1")
+    if controls.get("limited") == 1:
+        warnings.append("Nagranie sterowania osiągnęło limit rozmiaru; obejmuje początkową część próby.")
+    flight = totals.get("flight_recording_totals", {})
+    if flight.get("failed") == 1:
+        errors.append("bufor_diagnostyczny.failed=1")
+    if flight.get("dropped", 0):
+        warnings.append(f"Bufor diagnostyczny pominął próbki: {flight['dropped']}.")
+    if flight.get("saved", 0) < flight.get("markers", 0):
+        missing.append("zapis wszystkich oznaczonych problemów")
     warnings.extend("Zmiana ustawień odrzucona: " + value for value in xr.get("gesture_reload_rejected", []))
     if calibration and calibration.get("accepted") == 0:
         warnings.append("Kalibracja T-pose nie została zaliczona.")
@@ -154,6 +166,7 @@ def summarize(capture, runtime="unknown"):
     limitations = [
         "Żądania natywnego ruchu nie potwierdzają przemieszczenia postaci ani komfortu w goglach.",
         "Przekazanie zwolnienia ruchu do kolejki nie potwierdza dostarczenia do serwera.",
+        "Wysłanie wartości klawiatury i licznik rysowania kierownicy nie potwierdzają wyniku widocznego w grze.",
         "Liczby próbek dłoni i wysłanych obrazów mają różne podstawy; nie wyliczamy z nich procentu śledzenia.",
     ]
     if runtime_kind == "fake":
@@ -175,6 +188,8 @@ def summarize(capture, runtime="unknown"):
         "gesture_changes": xr.get("gesture_reload", []),
         "avatar_profile": xr.get("avatar_profile", []),
         "keypad_prototype": xr.get("keypad_prototype", []),
+        "problem_markers": xr.get("problem_marker", []),
+        "problem_saved": xr.get("problem_saved", []),
         "readiness": [fields(value) for value in xr.get("openxr_readiness", [])],
         "calibration_events": xr.get("avatar_calibration", []),
         "recenter_events": xr.get("openxr_calibration", []),
@@ -195,6 +210,11 @@ def markdown(report):
         ("Kalibracja", "avatar_calibration_totals", ("accepted", "holds", "longest_hold_ms", "valid_frames")),
         ("Przyciski dłoni", "hand_buttons_totals", ("accepted", "releases", "faults", "pending", "own_hold")),
         ("Nagranie śledzenia", "hand_recording_totals", ("samples", "limited", "failed")),
+        ("Nagranie sterowania", "control_recording_totals", ("limited", "failed")),
+        ("Bufor ostatnich minut", "flight_recording_totals", ("samples", "rotations", "dropped", "markers", "saved", "failed")),
+        ("Klawiatura pojazdu", "vehicle_keypad_totals", ("opened", "submitted", "cancelled", "rejected", "faults")),
+        ("Kierownica", "driver_wheel_totals", ("eyes", "identified", "draws", "patched_shaders", "compile_fallbacks")),
+        ("Sterowanie kierownicą", "locomotion_totals", ("steering_packets", "steering_releases", "steering_nonzero_packets", "steering_max_axis")),
     ]:
         values = t.get(key)
         content = "; ".join(f"{name}={values[name]}" for name in names if name in values) if values else "brak danych / opcja wyłączona"
@@ -203,7 +223,7 @@ def markdown(report):
         lines += ["", "Profil proporcji ciała: " + ", ".join(dict.fromkeys(report["avatar_profile"])) + "."]
     if len(report.get("locomotion_modes", [])) > 1:
         lines += ["", "Tryby ruchu w kolejności: " + " → ".join(report["locomotion_modes"]) + "."]
-    if report.get("keypad_prototype"):
+    if report.get("keypad_prototype") and not t.get("vehicle_keypad_totals"):
         lines += ["", "Klawiatura: prototyp lokalny. Wpisy OK nie potwierdzają wprowadzenia liczby do gry."]
     performance = report.get("performance")
     if performance:

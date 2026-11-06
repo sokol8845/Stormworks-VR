@@ -114,6 +114,8 @@ int main(int argc,char** argv){try{
         wheel.end_eye();command.active=false;eye();render(0,-.7f,true);
         if(dump&&kind==0)for(std::size_t i=0;i<mesh.positions.size();++i)dump<<"neutral,"<<i<<','<<output[i*stride]<<','<<output[i*stride+1]<<','<<output[i*stride+2]<<'\n';
         wheel.end_eye();eye();render(0,0,false);wheel.end_eye();
+        command.active=true;command.angle_radians=2.8f;eye();render(2.8f,0,true);wheel.end_eye();
+        command.active=false;eye();render(0,2.8f,true);wheel.end_eye();eye();render(0,0,false);wheel.end_eye();
         command.active=true;command.angle_radians=.7f;seat.observed=std::chrono::steady_clock::now();wheel.begin_eye(seat,command,expected,++frame);render(0,0,false);wheel.end_eye(); // no camera rebase
         seat.observed-=std::chrono::seconds(1);wheel.begin_eye(seat,command,expected,++frame);wheel.camera_rebased(actual);render(0,0,false);wheel.end_eye();
         command.seat=43;eye();render(0,0,false);wheel.end_eye();command.seat=42;
