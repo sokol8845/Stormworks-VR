@@ -90,6 +90,7 @@ struct Backend {
     Allocate allocate{};Push push{};
     std::mutex state_mutex,log_mutex;
     NativeHandButtonsStats counters{};
+    TargetFeedback feedback;
     Live identity{};std::uint64_t epoch=1,operation_nonce{},foreign_revision{};
     bool operation{},cancel_requested{},require_open{},blocked{};
     unsigned transition_depth{};
@@ -324,15 +325,16 @@ void selection_complete(void*,const NativeHandSelection& selection) noexcept {
     if(!backend||!installed.load(std::memory_order_acquire))return;
     auto& b=*backend;
     try {
-        {std::lock_guard lock(b.state_mutex);++b.counters.selections;if(b.transition_depth)return;}
+        {std::lock_guard lock(b.state_mutex);++b.counters.selections;b.feedback={};if(b.transition_depth)return;}
         const auto a6=reinterpret_cast<U>(selection.a6_live);
         if(a6<0x358)return;
         const U owner=a6-0x358;
         if(selection.a3!=owner+0xce600)return;
         const auto live=resolve(b,owner,selection.a4,selection.a2,reinterpret_cast<U>(selection.controller_live));
         if(!observe_identity(b,live))return;
+        bool button{};
         {   // Diagnostic: which kind of component the hand or gaze is aiming at.
-            const U target=selection.target_token;int type=-1;bool button{};
+            const U target=selection.target_token;int type=-1;
             if(target) {
                 U vtable{};
                 if(read(target,0,vtable)&&vtable==b.base+button_vt) {
@@ -350,6 +352,8 @@ void selection_complete(void*,const NativeHandSelection& selection) noexcept {
         }
         const bool ray_ok=selection.completed&&selection.used_hand_ray&&!selection.nested_selection;
         const auto gate=ray_ok?press_gate(b,live,selection.target_token):nullptr;
+        // Air or a component this backend never presses is not a blocked click: the ray stays grey.
+        if(ray_ok&&button){std::lock_guard lock(b.state_mutex);b.feedback={gate?TargetFeedbackState::blocked:TargetFeedbackState::ready,selection.sample,HandInteractionClock::now(),gate?gate:"ready"};}
         if(!ray_ok || gate) {
             const auto latest=b.bridge->inspect();
             bool report{};const auto reason=ray_ok?gate:"hand_ray_not_used";
@@ -649,9 +653,20 @@ NativeHandButtonsStats native_hand_buttons_stats() noexcept {
 }
 void reset_native_hand_buttons() noexcept {
     if(!backend)return;auto& b=*backend;
-    try {{std::lock_guard lock(b.state_mutex);++b.epoch;b.cancel_requested=true;b.require_open=true;b.candidate.reset();}
+    try {{std::lock_guard lock(b.state_mutex);++b.epoch;b.feedback={};b.cancel_requested=true;b.require_open=true;b.candidate.reset();}
         b.events.reset();note_native_button_retirement_reset();b.note("reset","metadata_cancel_ownership_preserved");
     }catch(...) {b.fail("reset_exception");}
+}
+TargetFeedback native_target_feedback(const HandInteractionSnapshot& latest)noexcept{
+    if(!backend||!installed.load(std::memory_order_acquire))return {};
+    try{auto& b=*backend;std::lock_guard lock(b.state_mutex);auto feedback=current_target_feedback(b.feedback,latest);
+        if(feedback.state==TargetFeedbackState::unknown)return feedback;
+        if(b.blocked||b.transition_depth){feedback.state=TargetFeedbackState::blocked;feedback.reason="backend_blocked";}
+        else if(b.hold){feedback.state=TargetFeedbackState::held;feedback.reason="held";}
+        else if(b.pending||b.operation){feedback.state=TargetFeedbackState::blocked;feedback.reason="pending";}
+        else if(b.require_open&&latest.pinch_down){feedback.state=TargetFeedbackState::blocked;feedback.reason="reopen_hand";}
+        return feedback;
+    }catch(...){return {};}
 }
 void flush_native_hand_buttons() noexcept {
     if(!backend)return;try{std::lock_guard lock(backend->log_mutex);if(backend->log)std::fflush(backend->log);}catch(...){}

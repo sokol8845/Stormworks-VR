@@ -6,7 +6,7 @@ namespace swvr {
 namespace {constexpr float pi=3.14159265358979323846f;
 bool finite(Vec3 p){return std::isfinite(p.x)&&std::isfinite(p.y)&&std::isfinite(p.z);}
 }
-void HandSteering::clear(bool geometry){command_={};armed_={};closed_={};angle_=0;if(geometry)wheel_.reset();}
+void HandSteering::clear(bool geometry){command_={};visual_={};armed_={};closed_={};angle_=0;if(geometry)wheel_.reset();}
 void HandSteering::reset(){std::lock_guard lock(mutex_);clear(true);seat_=0;time_.reset();frame_=0;}
 SteeringCommand HandSteering::inspect(Clock::time_point now){std::lock_guard lock(mutex_);if(now==Clock::time_point::max())now=Clock::now();if(now<published_||now-published_>std::chrono::milliseconds(100))clear(false);return command_;}
 void HandSteering::publish(const XrRuntimeFrame& f,const GestureSettings& settings,std::uintptr_t seat,bool allowed,Clock::time_point now){
@@ -27,6 +27,7 @@ void HandSteering::publish(const XrRuntimeFrame& f,const GestureSettings& settin
     time_=f.predicted_display_time_ns;frame_=f.id;published_=now;
     try {
         const auto head=gravity_aligned_origin({f.eyes[0].pose,f.eyes[1].pose});
+        visual_={true,wheel_.has_value(),wheel_.value_or(compose(head,Pose{{},{0,-.35f,-.4f}})),wheel_?radius_:.25f,{},f.id,f.space_revision};
         std::array<Vec3,2> p{f.hands[0].joints[1].pose.position,f.hands[1].joints[1].pose.position};
         if(!wheel_){
             if(!closed[0]||!closed[1]||!*closed[0]||!*closed[1]||!armed_[0]||!armed_[1]||!finite(p[0])||!finite(p[1]))return;
@@ -34,6 +35,7 @@ void HandSteering::publish(const XrRuntimeFrame& f,const GestureSettings& settin
             const float span=std::hypot(b.x-a.x,b.y-a.y);
             if(span<.16f||span>.65f||std::abs(a.z-b.z)>.15f||b.x-a.x<.12f||a.z>-.10f||b.z>-.10f||a.z<-.85f||b.z<-.85f||a.y>.05f||b.y>.05f||a.y<-.8f||b.y<-.8f)return;
             wheel_=Pose{head.orientation,{(p[0].x+p[1].x)/2,(p[0].y+p[1].y)/2,(p[0].z+p[1].z)/2}};radius_=span/2;
+            visual_.plane=*wheel_;visual_.radius=radius_;visual_.established=true;
         }
         float sum{};unsigned contributors{};
         for(unsigned h=0;h<2;++h){
@@ -49,6 +51,7 @@ void HandSteering::publish(const XrRuntimeFrame& f,const GestureSettings& settin
             last_angle_[h]=angle;command_.hands[h]=closed_[h]=true;
         }
         command_.active=command_.hands[0]||command_.hands[1];
+        visual_.held=command_.hands;
         if(!command_.active){angle_=0;command_={};return;}
         const auto& preferences=settings.steering;
         const float lock_angle=preferences.full_lock_degrees*pi/180.f,dead_angle=preferences.dead_zone_degrees*pi/180.f;

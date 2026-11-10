@@ -89,6 +89,12 @@ void GlAvatarPose::matrix_uploaded(int location,int count,bool transpose,const f
   if(valid!=present||(valid&&std::memcmp(values,data.data(),19*sizeof(Matrix4))))++program.serial;
   token=reinterpret_cast<std::uintptr_t>(values);present=valid;if(valid)std::memcpy(data.data(),values,19*sizeof(Matrix4));}
 }
+GlProgramInterest GlAvatarPose::interest(void* context,unsigned name) const {
+ std::lock_guard lock(impl_->mutex);
+ const auto c=impl_->contexts.find(static_cast<HGLRC>(context));if(c==impl_->contexts.end())return GlProgramInterest::unknown;
+ const auto p=c->second.programs.find(name);if(p==c->second.programs.end())return GlProgramInterest::unknown;
+ return p->second.current_location>=0?GlProgramInterest::active:GlProgramInterest::none;
+}
 void GlAvatarPose::program_linked(unsigned name){std::lock_guard lock(impl_->mutex);if(impl_->restoring_name==name){impl_->restoring_program=nullptr;impl_->restoring_context=nullptr;}for(auto& [_,c]:impl_->contexts)c.programs.erase(name);}
 void GlAvatarPose::context_destroyed(void* context){std::lock_guard lock(impl_->mutex);if(impl_->eye_context==context){impl_->active=false;impl_->restoring_program=nullptr;impl_->restoring_context=nullptr;}impl_->contexts.erase(static_cast<HGLRC>(context));}
 void GlAvatarPose::begin_eye(AvatarTargets targets,AvatarIdentity identity,Matrix4d expected,std::span<const AvatarPaletteBinding> bindings){

@@ -1,4 +1,53 @@
-# Stan pracy — Stormworks VR (2026-11-06)
+# Stan pracy — Stormworks VR (2026-11-10)
+
+## Pięć rozszerzeń dokończonych offline: cel, chodzenie, podglądy, ćwiczenia
+
+Wstrzymane 2026-11-07 rozszerzenia są ukończone i sprawdzone offline:
+
+1. Promień palca jest szary bez potwierdzenia, **zielony**, gdy gra przyjmie
+   kliknięcie tego przycisku, i bursztynowy z krótkim powodem, gdy kliknięcie
+   jest zablokowane albo przycisk trzymany.
+2. **MENU → CHODZENIE → REGULACJA CHODZENIA**: martwa strefa, zakres i oba
+   progi sprintu w milimetrach.
+3. **PODGLAD JOYSTICKOW** — okręgi z bieżącym wychyleniem obu joysticków.
+4. **KIEROWNICA → USTAW CHWYT / POKAZ CHWYT** — ponowne ustawienie środka
+   i podgląd strefy chwytu.
+5. **NARZEDZIA → CWICZENIA STEROWANIA** — cztery etapy treningu, podczas
+   których gesty nie sterują grą.
+
+Release, **60/60 CTest**, **64/64 Python**, **78 kontroli EXE** i test DLL
+przechodzą. Gra pozostała zamknięta: **nic z tego nie było jeszcze w goglach**.
+Zmiany nie są opublikowane; lokalny `config/gestures.ini` zachowano.
+[Obsługa, ograniczenia, testy i lista do próby](practice-tools-20261110.md).
+Wyniki testów w starszych sekcjach poniżej dotyczą wcześniejszych wersji.
+
+## Optymalizacja hooków OpenGL (2026-11-10, offline)
+
+Hooki rysowania, macierzy i `glUniform1i/1f` nie pytają już sterownika o
+bieżący program przy każdym wywołaniu. Hook `glUseProgram` zapamiętuje program
+(odczytany ze sterownika po wywołaniu), a maska głowy, awatar i kierownica są
+pomijane dla programów, których nie dotyczą. Zachowanie się nie zmienia:
+pomijane są wyłącznie wywołania, które i tak kończyły się bez efektu.
+
+- Pomiar na tej karcie (`tmp/hook-bench`, liczby wywołań z nagrania kokpitu):
+  narzut hooków **1,15 → 0,15 ms CPU na klatkę stereo**; pojedyncze rysowanie
+  138 → 8 ns, macierz 68 → 2,5 ns, uniform skalarny 28 → 2,6 ns. Zmiana
+  programu kosztuje więcej (39 → 119 ns), co jest wliczone w wynik.
+- Co 256 wywołań hook porównuje zapamiętany program ze sterownikiem. Rozbieżność
+  wyłącza śledzenie do końca procesu i zapisuje
+  `#gl_program_tracking mismatch_reverted_to_driver_queries`.
+- `SWVR_PROGRAM_TRACKING=0` uruchamia starą ścieżkę z zapytaniami.
+  Podsumowanie sesji zawiera `#gl_program_tracking state=… checks=…`.
+- Kod: `include/swvr/gl_program_tracker.hpp`, `interest()` w `head_mask_gl`,
+  `avatar_pose_gl`, `driver_wheel_gl`, hooki w `src/gl_trace.cpp`.
+- Testy: nowy `gl_program_tracker`, asercje `interest()` w trzech testach GPU,
+  scenariusze w `head_mask_injection` na prawdziwej DLL (odrzucony
+  `glUseProgram`, długie wiązanie, relink), także z `SWVR_PROGRAM_TRACKING=0`.
+  Wyniki całości po dokończeniu rozszerzeń: sekcja powyżej.
+
+**Nie sprawdzono w grze ani w goglach.** Do oceny w próbie: `render_eye_cpu`
+w `.performance.json` (poprzednio średnio 1,7–1,9 ms na oko), stan
+`gl_program_tracking` w `.xr.txt` oraz wygląd głowy, rąk awatara i kierownicy.
 
 ## Pięć rozszerzeń offline: narzędzia, profile i zapis problemów
 

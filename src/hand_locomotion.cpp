@@ -21,7 +21,7 @@ bool valid(const XrTrackedJoint& joint) {
 }
 float axis(float metres,const JoystickSettings& s){return std::abs(metres)<=s.dead_zone_m?0.f:std::copysign(std::min(1.f,(std::abs(metres)-s.dead_zone_m)/(s.full_deflection_m-s.dead_zone_m)),metres);}
 }
-void HandLocomotion::clear(){pinch_.reset();joystick_closed_=false;command_={};neutral_.reset();published_.reset();arm_swing_.reset();}
+void HandLocomotion::clear(){pinch_.reset();joystick_closed_=false;command_={};visual_={};neutral_.reset();published_.reset();arm_swing_.reset();}
 void HandLocomotion::record(LocomotionEvent event,Clock::time_point now){
     if(!journal_enabled_||journal_overflow_)return;
     if(journal_.size()>=1024){journal_overflow_=true;return;}
@@ -118,7 +118,7 @@ void HandLocomotion::publish(const XrRuntimeFrame& frame,bool allowed,Clock::tim
         if(gesture==PinchEvent::began) {
             neutral_=relative;axes_=gravity_aligned_origin({frame.eyes[0].pose,frame.eyes[1].pose}).orientation;
         }
-        if(gesture==PinchEvent::released||gesture==PinchEvent::cancelled){neutral_.reset();command_={};return;}
+        if(gesture==PinchEvent::released||gesture==PinchEvent::cancelled){neutral_.reset();command_={};visual_={};return;}
         if(!neutral_){command_={};status_=legacy?"KCIUK DO SRODKOWEGO":selected?"JOYSTICK PRAWA - OTWARTA DLON":"JOYSTICK LEWA - OTWARTA DLON";return;}
         // Subtract head translation as well as hand translation: ordinary
         // room-scale motion or turning the head alone must not move the stick.
@@ -128,6 +128,7 @@ void HandLocomotion::publish(const XrRuntimeFrame& frame,bool allowed,Clock::tim
         const auto& s=settings_.joystick;
         const bool sprint=forward>=(command_.sprint?s.sprint_off_m:s.sprint_on_m)&&(s.forward_only||forward>std::abs(delta.x)*1.5f);
         command_={s.forward_only?std::max(0.f,axis(forward,s)):axis(forward,s),s.forward_only?0.f:axis(delta.x,s),true,sprint};
+        visual_={true,false,sprint,s.forward_only,selected,delta,s.dead_zone_m,s.full_deflection_m,frame.id,frame.space_revision};
         status_=sprint?"BIEG":command_.forward||command_.sideways?"CHOD":!legacy?"JOYSTICK - NEUTRALNY":selected?"PRZESUN PRAWA DLON":"PRZESUN LEWA DLON";
     } catch(...) {clear();}
 }

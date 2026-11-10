@@ -1,6 +1,7 @@
 #pragma once
 #include "swvr/native_hand_ray.hpp"
 #include "swvr/native_input_lifecycle.hpp"
+#include "swvr/target_feedback.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -41,6 +42,7 @@ const char* native_hand_buttons_status_name(NativeHandButtonsStatus) noexcept;
 // Pass to install_native_hand_ray after successful buttons installation.
 NativeHandRayCallbacks native_hand_buttons_callbacks() noexcept;
 NativeHandButtonsStats native_hand_buttons_stats() noexcept;
+TargetFeedback native_target_feedback(const HandInteractionSnapshot&)noexcept;
 // Metadata-only cancellation. Pending event tombstones, own hold, ownership
 // records and uncertainty survive until a proven live native cleanup path.
 void reset_native_hand_buttons() noexcept;

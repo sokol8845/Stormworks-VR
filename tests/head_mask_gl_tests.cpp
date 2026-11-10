@@ -163,8 +163,10 @@ int main() {
         program.values(1,.25f,.75f);check(true,true,true); // Native selected bone differs from this test mesh vertex.
         program.values(2,.25f,.75f);check(false,false,true);
         const auto cached=mask.stats();mask.before_draw(false);require(mask.stats().program_cache_misses==cached.program_cache_misses,"program locations were not cached");
-        const auto before_relink=mask.stats();program.relink(false);mask.program_linked(program.id);program.values(2,.25f,.75f);const State unpatched_state;
+        require(mask.interest(wglGetCurrentContext(),program.id)==swvr::GlProgramInterest::active && mask.interest(wglGetCurrentContext(),program.id+1000)==swvr::GlProgramInterest::unknown && mask.stats().calls==cached.calls+1,"patched program interest wrong or not side-effect free");
+        const auto before_relink=mask.stats();program.relink(false);mask.program_linked(program.id);require(mask.interest(wglGetCurrentContext(),program.id)==swvr::GlProgramInterest::unknown,"link did not reset program interest");program.values(2,.25f,.75f);const State unpatched_state;
         require(!mask.before_draw(true) && program.flag()==-1,"unpatched program modified");require(State{}==unpatched_state && target.visible(),"unpatched shader behavior or state changed");
+        require(mask.interest(wglGetCurrentContext(),program.id)==swvr::GlProgramInterest::none,"unpatched program not reported as skippable");
         require(mask.stats().uniform_writes==before_relink.uniform_writes && mask.stats().program_cache_misses==before_relink.program_cache_misses+1,"link invalidation failed");
         program.relink(true);mask.program_linked(program.id);program.values(2,.25f,.75f);require(program.flag()==0,"relink default not zero");check(true,true,false);check(false,false,true);
         // A fresh unshared context deliberately uses the same numeric program

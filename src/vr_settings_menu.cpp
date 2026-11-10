@@ -60,6 +60,15 @@ std::string_view help_description(VrMenuAction action)noexcept{switch(action){
     case VrMenuAction::profile_restore:return "WCZYTUJE POPRZEDNIA WERSJE WYBRANEGO ZESTAWU. ZAPISZ UTRWALA JA W PROFILU.";
     case VrMenuAction::diagnostics_toggle:return "POKAZUJE OSIE RUCHU, CHWYTY I POWOD BLOKADY KLIKANIA. PANEL TYLKO DO ODCZYTU.";
     case VrMenuAction::mark_problem:return "ZAPISUJE OSTATNIE MINUTY NA KOMPUTERZE. ZACHOWUJE 3 NAJNOWSZE ZGLOSZENIA. NICZEGO NIE WYSYLA.";
+    case VrMenuAction::movement_tuning_page:return "REGULUJE MARTWA STREFE, WYCHYLENIE JOYSTICKA I PROGI SPRINTU W MILIMETRACH.";
+    case VrMenuAction::joy_dead_less:case VrMenuAction::joy_dead_more:return "MARTWA STREFA CHODZENIA. MNIEJSZE WYCHYLENIA DLONI NIE RUSZAJA POSTACI.";
+    case VrMenuAction::joy_range_less:case VrMenuAction::joy_range_more:return "WYCHYLENIE DLONI DO PELNEJ OSI RUCHU. MNIEJ = CZULSZY JOYSTICK. GRA UZYWA KLAWISZY RUCHU.";
+    case VrMenuAction::sprint_on_less:case VrMenuAction::sprint_on_more:return "WYCHYLENIE DO PRZODU WLACZAJACE SPRINT. MUSI BYC WIEKSZE OD PROGU STOP.";
+    case VrMenuAction::sprint_off_less:case VrMenuAction::sprint_off_more:return "PRZY COFANIU DLONI PONIZEJ TEGO PROGU SPRINT WYLACZA SIE. CHODZENIE MOZE TRWAC.";
+    case VrMenuAction::joystick_visual_toggle:return "DWA OKREGI POKAZUJA SRODEK I WYCHYLENIE JOYSTICKA RUCHU ORAZ OBROTU.";
+    case VrMenuAction::wheel_grip_reset:return "W FOTELU USTAWIA CHWYT OD NOWA. OTWORZ OBIE DLONIE, POTEM ZLAP KIEROWNICE.";
+    case VrMenuAction::wheel_visual_toggle:return "POKAZUJE UMOWNA OBRECZ CHWYTU. TO STREFA DETEKTORA, NIE PODSWIETLENIE MODELU POJAZDU.";
+    case VrMenuAction::practice:return "TRENING RUCHU, OBROTU, CHWYTU I KLIKANIA. GESTY NIE STERUJA WTEDY GRA. WYJSCIE W PANELU.";
     case VrMenuAction::help:return "PRZELACZA POMOC. WSKAZANIE OPCJI POKAZUJE OPIS I NIC NIE ZMIENIA.";
     }return "";}
 std::vector<PanelButton> controls(){const auto id=[](VrMenuAction a){return static_cast<int>(a);};return {
@@ -83,18 +92,23 @@ std::vector<PanelButton> comfort_buttons(){const auto id=[](VrMenuAction a){retu
     {id(VrMenuAction::controls),"WROC",0,-.26f,.40f,.06f}};}
 std::vector<PanelButton> movement_buttons(){const auto id=[](VrMenuAction a){return static_cast<int>(a);};return {
     {id(VrMenuAction::joystick_left),"JOY LEWA",-.105f,.14f,.19f,.065f},{id(VrMenuAction::joystick_right),"JOY PRAWA",.105f,.14f,.19f,.065f},
-    {id(VrMenuAction::forward_only_toggle),"TYLKO PRZOD: WL / WYL",0,.06f,.40f,.065f},
+    {id(VrMenuAction::forward_only_toggle),"TYLKO PRZOD: WYL",0,.06f,.40f,.065f},
+    {id(VrMenuAction::movement_tuning_page),"REGULACJA CHODZENIA",0,-.02f,.40f,.065f},
+    {id(VrMenuAction::joystick_visual_toggle),"PODGLAD JOYSTICKOW: WYL",0,-.10f,.40f,.065f},
     {id(VrMenuAction::back),"WROC",0,-.26f,.40f,.06f}};}
 std::vector<PanelButton> tools_buttons(){const auto id=[](VrMenuAction a){return static_cast<int>(a);};return {
     {id(VrMenuAction::steering_page),"KIEROWNICA",0,.14f,.40f,.065f},
     {id(VrMenuAction::profiles_page),"PROFILE STEROWANIA",0,.06f,.40f,.065f},
-    {id(VrMenuAction::diagnostics_toggle),"DIAGNOSTYKA: WL / WYL",0,-.02f,.40f,.065f},
+    {id(VrMenuAction::diagnostics_toggle),"DIAGNOSTYKA: WYL",0,-.02f,.40f,.065f},
     {id(VrMenuAction::mark_problem),"ZGLOS PROBLEM - ZAPIS",0,-.10f,.40f,.065f},
+    {id(VrMenuAction::practice),"CWICZENIA STEROWANIA",0,-.18f,.40f,.065f},
     {id(VrMenuAction::back),"WROC",0,-.26f,.40f,.06f}};}
 std::vector<PanelButton> steering_buttons(){const auto id=[](VrMenuAction a){return static_cast<int>(a);};return {
     {id(VrMenuAction::wheel_lock_less),"KAT -",-.105f,.14f,.19f,.065f},{id(VrMenuAction::wheel_lock_more),"KAT +",.105f,.14f,.19f,.065f},
     {id(VrMenuAction::wheel_dead_less),"STREFA -",-.105f,.06f,.19f,.065f},{id(VrMenuAction::wheel_dead_more),"STREFA +",.105f,.06f,.19f,.065f},
     {id(VrMenuAction::wheel_smooth_less),"FILTR -",-.105f,-.02f,.19f,.065f},{id(VrMenuAction::wheel_smooth_more),"FILTR +",.105f,-.02f,.19f,.065f},
+    {id(VrMenuAction::wheel_grip_reset),"USTAW CHWYT",0,-.10f,.40f,.065f},
+    {id(VrMenuAction::wheel_visual_toggle),"POKAZ CHWYT: WYL",0,-.18f,.40f,.065f},
     {id(VrMenuAction::tools_page),"WROC",0,-.26f,.40f,.06f}};}
 std::vector<PanelButton> profile_buttons(){const auto id=[](VrMenuAction a){return static_cast<int>(a);};return {
     {id(VrMenuAction::profile_walking),"CHODZENIE",-.105f,.14f,.19f,.065f},{id(VrMenuAction::profile_driving),"JAZDA",.105f,.14f,.19f,.065f},
@@ -103,9 +117,28 @@ std::vector<PanelButton> profile_buttons(){const auto id=[](VrMenuAction a){retu
     {id(VrMenuAction::profile_restore),"WCZYTAJ KOPIE",0,-.10f,.40f,.065f},
     {id(VrMenuAction::tools_page),"WROC",0,-.26f,.40f,.06f}};}
 
+std::vector<PanelButton> movement_tuning_buttons(){const auto id=[](VrMenuAction a){return static_cast<int>(a);};return {
+    {id(VrMenuAction::joy_dead_less),"STREFA -",-.105f,.14f,.19f,.065f},{id(VrMenuAction::joy_dead_more),"STREFA +",.105f,.14f,.19f,.065f},
+    {id(VrMenuAction::joy_range_less),"ZAKRES -",-.105f,.06f,.19f,.065f},{id(VrMenuAction::joy_range_more),"ZAKRES +",.105f,.06f,.19f,.065f},
+    {id(VrMenuAction::sprint_on_less),"BIEG START -",-.105f,-.02f,.19f,.065f},{id(VrMenuAction::sprint_on_more),"BIEG START +",.105f,-.02f,.19f,.065f},
+    {id(VrMenuAction::sprint_off_less),"BIEG STOP -",-.105f,-.10f,.19f,.065f},{id(VrMenuAction::sprint_off_more),"BIEG STOP +",.105f,-.10f,.19f,.065f},
+    {id(VrMenuAction::movement_page),"WROC",0,-.26f,.40f,.06f}};}
+void increase(float& value,float step,float limit){if(limit>value)value=std::min(limit,value+step);}
+void decrease(float& value,float step,float limit){if(limit<value)value=std::max(limit,value-step);}
+
 }
 std::string_view vr_menu_help(VrMenuAction action)noexcept{return help_description(action);}
-bool adjust_vr_preferences(VrMenuAction action,GestureSettings& s){switch(action){
+bool adjust_vr_preferences(VrMenuAction action,GestureSettings& s){auto& j=s.joystick;switch(action){
+    case VrMenuAction::joy_dead_less:decrease(j.dead_zone_m,.005f,.005f);break;
+    case VrMenuAction::joy_dead_more:increase(j.dead_zone_m,.005f,std::min({.1f,j.full_deflection_m-.001f,j.sprint_off_m-.001f}));break;
+    case VrMenuAction::joy_range_less:decrease(j.full_deflection_m,.01f,std::max(.02f,j.dead_zone_m+.001f));break;
+    case VrMenuAction::joy_range_more:increase(j.full_deflection_m,.01f,.4f);break;
+    case VrMenuAction::sprint_on_less:decrease(j.sprint_on_m,.01f,std::max(.02f,j.sprint_off_m+.001f));break;
+    case VrMenuAction::sprint_on_more:increase(j.sprint_on_m,.01f,.4f);break;
+    case VrMenuAction::sprint_off_less:decrease(j.sprint_off_m,.01f,std::max(.01f,j.dead_zone_m+.001f));break;
+    case VrMenuAction::sprint_off_more:increase(j.sprint_off_m,.01f,std::min(.4f,j.sprint_on_m-.001f));break;
+    case VrMenuAction::joystick_visual_toggle:s.input.joystick_visual=!s.input.joystick_visual;break;
+    case VrMenuAction::wheel_visual_toggle:s.steering.show_grip=!s.steering.show_grip;break;
     case VrMenuAction::wheel_lock_less:s.steering.full_lock_degrees=std::max(30.f,s.steering.full_lock_degrees-15);break;
     case VrMenuAction::wheel_lock_more:s.steering.full_lock_degrees=std::min(180.f,s.steering.full_lock_degrees+15);break;
     case VrMenuAction::wheel_dead_less:s.steering.dead_zone_degrees=std::max(0.f,s.steering.dead_zone_degrees-.5f);break;
@@ -140,6 +173,14 @@ bool VrSettingsMenu::open(const XrRuntimeFrame& f,VrMenuCapabilities capabilitie
 }
 void VrSettingsMenu::status(const GestureSettings& settings,bool arms){settings_=settings;arms_=arms;options_.offset.z=-settings.input.menu_distance_m;options_.offset.y=settings.comfort.seated?-.12f:-.05f;options_.dwell_ms=settings.input.dwell_ms;options_.scale=settings.input.menu_scale;
     if(panel_.snapshot().visible)panel_.reconfigure(options_);
+    // Each switch on these pages names its own state; the value line has no room for all of them.
+    if(page_==4){panel_.set_label(static_cast<int>(VrMenuAction::forward_only_toggle),settings.joystick.forward_only?"TYLKO PRZOD: WL":"TYLKO PRZOD: WYL");
+        panel_.set_label(static_cast<int>(VrMenuAction::joystick_visual_toggle),settings.input.joystick_visual?"PODGLAD JOYSTICKOW: WL":"PODGLAD JOYSTICKOW: WYL");}
+    if(page_==5)panel_.set_label(static_cast<int>(VrMenuAction::diagnostics_toggle),diagnostics_?"DIAGNOSTYKA: WL":"DIAGNOSTYKA: WYL");
+    if(page_==6)panel_.set_label(static_cast<int>(VrMenuAction::wheel_visual_toggle),settings.steering.show_grip?"POKAZ CHWYT: WL":"POKAZ CHWYT: WYL");
+    if(page_==8){const auto millimetres="STREFA "+std::to_string(static_cast<int>(std::lround(settings.joystick.dead_zone_m*1000)))+" / ZAKRES "+std::to_string(static_cast<int>(std::lround(settings.joystick.full_deflection_m*1000)))+" / BIEG "+std::to_string(static_cast<int>(std::lround(settings.joystick.sprint_on_m*1000)))+"/"+std::to_string(static_cast<int>(std::lround(settings.joystick.sprint_off_m*1000)));
+        // Four three-digit values leave no room for the space before the unit.
+        panel_.set_value(millimetres+(millimetres.size()>37?"MM":" MM"));return;}
     if(page_==5){panel_.set_value(diagnostics_?"DIAGNOSTYKA: WL":"DIAGNOSTYKA: WYL");return;}
     if(page_==6){panel_.set_value("KAT "+std::to_string(static_cast<int>(std::lround(settings.steering.full_lock_degrees)))+" / STREFA "+decimal(settings.steering.dead_zone_degrees)+" DEG / FILTR "+std::to_string(static_cast<int>(std::lround(settings.steering.smoothing_ms)))+" MS");return;}
     if(page_==7){panel_.set_value("WYBRANY: "+std::string(control_profile_name(profile_)));return;}
@@ -162,11 +203,12 @@ std::optional<VrMenuAction> VrSettingsMenu::update(const XrRuntimeFrame& f){
     case VrMenuAction::tools_page:next_page=5;break;
     case VrMenuAction::steering_page:next_page=6;break;
     case VrMenuAction::profiles_page:next_page=7;break;
+    case VrMenuAction::movement_tuning_page:next_page=8;break;
     default:break;
     }
     if(next_page){page_=*next_page;
-        const std::array<const char*,8> titles{"USTAWIENIA VR","OBROT I MENU","INTERFEJS","KOMFORT","CHODZENIE","NARZEDZIA","KIEROWNICA","PROFILE STEROWANIA"};
-        auto list=page_==0?buttons(capabilities_):page_==1?controls():page_==2?interface_buttons():page_==3?comfort_buttons():page_==4?movement_buttons():page_==5?tools_buttons():page_==6?steering_buttons():profile_buttons();
+        const std::array<const char*,9> titles{"USTAWIENIA VR","OBROT I MENU","INTERFEJS","KOMFORT","CHODZENIE","NARZEDZIA","KIEROWNICA","PROFILE STEROWANIA","REGULACJA CHODZENIA"};
+        auto list=page_==0?buttons(capabilities_):page_==1?controls():page_==2?interface_buttons():page_==3?comfort_buttons():page_==4?movement_buttons():page_==5?tools_buttons():page_==6?steering_buttons():page_==7?profile_buttons():movement_tuning_buttons();
         panel_.open(f,with_help(std::move(list)),titles[page_],options_);status(settings_,arms_);return {};
     }
     if(action==VrMenuAction::profile_walking||action==VrMenuAction::profile_driving||action==VrMenuAction::profile_second_user){

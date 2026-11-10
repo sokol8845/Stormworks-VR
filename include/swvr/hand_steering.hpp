@@ -1,6 +1,7 @@
 #pragma once
 #include "swvr/gesture_settings.hpp"
 #include "swvr/xr_runtime.hpp"
+#include "swvr/input_visuals.hpp"
 #include <chrono>
 #include <mutex>
 #include <optional>
@@ -14,11 +15,13 @@ public:
     void publish(const XrRuntimeFrame&,const GestureSettings&,std::uintptr_t seat,bool allowed,Clock::time_point now=Clock::now());
     SteeringCommand inspect(Clock::time_point now=Clock::time_point::max());
     SteeringCommand diagnostic_command(){std::lock_guard lock(mutex_);return command_;}
+    WheelGripVisual grip_visual(){std::lock_guard lock(mutex_);return visual_;}
     void reset();
 private:
     void clear(bool geometry);
     std::mutex mutex_;
     SteeringCommand command_;
+    WheelGripVisual visual_;
     std::array<bool,2> armed_{},closed_{};
     std::array<float,2> last_angle_{};
     std::optional<Pose> wheel_;

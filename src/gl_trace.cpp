@@ -21,6 +21,7 @@
 #include "swvr/gl_eye_targets.hpp"
 #include "swvr/gl_xr_presenter.hpp"
 #include "swvr/gl_hand_overlay.hpp"
+#include "swvr/control_practice.hpp"
 #include "swvr/native_camera.hpp"
 #include "swvr/native_eye_resources.hpp"
 #include "swvr/stereo_culling.hpp"
@@ -28,6 +29,7 @@
 #include "swvr/head_anchor.hpp"
 #include "swvr/head_mask_shader.hpp"
 #include "swvr/head_mask_gl.hpp"
+#include "swvr/gl_program_tracker.hpp"
 #include "swvr/head_mask_sources.hpp"
 #include "swvr/hand_interaction.hpp"
 #include "swvr/native_hand_ray.hpp"
@@ -230,6 +232,46 @@ void package_initialize(void* package,void* manager,std::uint32_t width,std::uin
         if(package_managers.contains(package) || package_managers.size()<256) package_managers[package]=manager;
     } catch(...) {}
 }
+// The glUseProgram hook remembers the bound program per thread, so the hooks
+// that run for every draw, matrix upload and scalar uniform neither query the
+// driver nor call a consumer that proved the program irrelevant. A mismatch
+// found by the periodic check turns tracking off for the rest of the process;
+// SWVR_PROGRAM_TRACKING=0 starts with it off.
+enum : std::size_t {mask_consumer,avatar_consumer,wheel_consumer,program_consumers};
+using ProgramTracker=swvr::GlProgramTracker<program_consumers>;
+thread_local ProgramTracker program_tracker;
+bool program_tracking_requested=true;
+std::atomic<bool> program_tracking{true};
+std::atomic<std::uint64_t> program_bindings{1},program_caches{1},program_checks{};
+swvr::GlProgramInterest program_interest(std::size_t consumer,void* context,unsigned program) noexcept {
+    try {
+        if(consumer==mask_consumer)return head_mask.interest(context,program);
+        if(consumer==avatar_consumer)return avatar_pose.interest(context,program);
+        return driver_wheel.interest(context,program);
+    } catch(...) {return swvr::GlProgramInterest::active;}
+}
+// The calling thread's tracker when it describes the current context's
+// program; nullptr means the caller must call every consumer.
+ProgramTracker* tracked_program() noexcept {
+    if(!program_tracking.load(std::memory_order_relaxed))return nullptr;
+    auto& tracker=program_tracker;
+    if(!tracker.current(wglGetCurrentContext(),program_bindings.load(std::memory_order_relaxed),
+                        program_caches.load(std::memory_order_relaxed),program_interest))return nullptr;
+    if(tracker.validation_due()) {
+        GLint actual{};glGetIntegerv(0x8B8D,&actual);program_checks.fetch_add(1,std::memory_order_relaxed);
+        if(static_cast<unsigned>(actual)!=tracker.program()) {
+            if(program_tracking.exchange(false))xr_note("gl_program_tracking","mismatch_reverted_to_driver_queries");
+            return nullptr;
+        }
+    }
+    return &tracker;
+}
+// Head-mask update for the bound program, skipped when it carries no mask uniform.
+void mask_bound_program(ProgramTracker* tracked,bool active) noexcept {
+    if(tracked&&!tracked->wants(mask_consumer))return;
+    apply_head_mask(active);
+    if(tracked)tracked->taught(mask_consumer,program_interest);
+}
 // State is queried per event, so switching contexts does not corrupt metadata.
 void record(const char* kind,long long a,long long b,long long c,void* caller,
             const char* name=nullptr,const float* matrix=nullptr) noexcept {
@@ -256,11 +298,25 @@ void record(const char* kind,long long a,long long b,long long c,void* caller,
         if(written_events==limit || !strcmp(kind,"swap")) fflush(output);
     } catch(...) { /* Never propagate diagnostics errors into the host. */ }
 }
-void APIENTRY use(GLuint program) {real_use(program);apply_head_mask(false);record("program",program,0,0,_ReturnAddress());}
+void APIENTRY use(GLuint program) {
+    real_use(program);apply_head_mask(false);
+    if(program_tracking.load(std::memory_order_relaxed)) {
+        // Read back instead of trusting the argument: a rejected glUseProgram
+        // leaves the previous program bound. The head mask has just seen it.
+        const auto context=wglGetCurrentContext();GLint actual{};
+        if(context)glGetIntegerv(0x8B8D,&actual);
+        program_tracker.bind(context,static_cast<unsigned>(actual),program_bindings.load(std::memory_order_relaxed),
+                             program_caches.load(std::memory_order_relaxed),program_interest);
+    }
+    record("program",program,0,0,_ReturnAddress());
+}
 void APIENTRY bind(GLenum target,GLuint fbo) {real_bind(target,fbo);record("framebuffer",target,fbo,0,_ReturnAddress());}
 GLint APIENTRY location(GLuint program,const char* name) {
     const auto result=real_location(program,name);
-    if(avatar_enabled)try {avatar_pose.uniform_location(program,result,name);}catch(const std::exception& error) {avatar_failed(error.what());}
+    if(avatar_enabled) {
+        try {avatar_pose.uniform_location(program,result,name);}catch(const std::exception& error) {avatar_failed(error.what());}
+        program_caches.fetch_add(1,std::memory_order_relaxed); // May have taught the avatar a palette location.
+    }
     if(result>=0 && name) {
         try {
             std::lock_guard lock(log_mutex);
@@ -276,8 +332,16 @@ GLint APIENTRY location(GLuint program,const char* name) {
 }
 void APIENTRY matrix(GLint loc,GLsizei count,GLboolean transpose,const GLfloat* values) {
     real_matrix(loc,count,transpose,values);
-    if(avatar_enabled)try {avatar_pose.matrix_uploaded(loc,count,transpose!=GL_FALSE,values);}catch(const std::exception& error) {avatar_failed(error.what());}
-    if(wheel_enabled)try {driver_wheel.matrix_uploaded(loc,count,transpose!=GL_FALSE,values);}catch(const std::exception& error) {wheel_failed(error.what());}
+    const bool avatar=avatar_enabled,wheel=wheel_enabled;
+    const auto tracked=avatar||wheel?tracked_program():nullptr;
+    if(avatar&&(!tracked||tracked->wants(avatar_consumer))) {
+        try {avatar_pose.matrix_uploaded(loc,count,transpose!=GL_FALSE,values);}catch(const std::exception& error) {avatar_failed(error.what());}
+        if(tracked)tracked->taught(avatar_consumer,program_interest);
+    }
+    if(wheel&&(!tracked||tracked->wants(wheel_consumer))) {
+        try {driver_wheel.matrix_uploaded(loc,count,transpose!=GL_FALSE,values);}catch(const std::exception& error) {wheel_failed(error.what());}
+        if(tracked)tracked->taught(wheel_consumer,program_interest);
+    }
     record("matrix4",loc,count,transpose,_ReturnAddress(),nullptr,count>0?values:nullptr);
 }
 void camera_update(void* camera,float aspect) {
@@ -417,16 +481,23 @@ void APIENTRY link_program(GLuint program) {
     if(wheel_enabled)try{driver_wheel.program_linked(program);}catch(const std::exception& error){wheel_failed(error.what());}
     if(avatar_enabled)try {avatar_pose.program_linked(program);}catch(const std::exception& error) {avatar_failed(error.what());}
     if(head_mask_requested) try {head_mask.program_linked(program);} catch(...) {head_mask_enabled=false;}
+    program_caches.fetch_add(1,std::memory_order_relaxed);
 }
 void APIENTRY delete_shader(GLuint shader) {
     if(wheel_requested)try{wheel_sources.forget(current_context(),shader);}catch(...){}
     if(head_mask_requested) try {shader_sources.forget(current_context(),shader);} catch(...) {}
     real_delete_shader(shader);
 }
-void APIENTRY uniform_int(GLint location,GLint value) {real_uniform_int(location,value);apply_head_mask(head_eye_active());}
-void APIENTRY uniform_float(GLint location,GLfloat value) {real_uniform_float(location,value);apply_head_mask(head_eye_active());}
+void APIENTRY uniform_int(GLint location,GLint value) {
+    real_uniform_int(location,value);if(head_mask_enabled)mask_bound_program(tracked_program(),head_eye_active());
+}
+void APIENTRY uniform_float(GLint location,GLfloat value) {
+    real_uniform_float(location,value);if(head_mask_enabled)mask_bound_program(tracked_program(),head_eye_active());
+}
 BOOL WINAPI delete_context(HGLRC context) {
     const auto result=real_delete_context(context);
+    // A later context may reuse this handle with a different bound program.
+    if(result){program_bindings.fetch_add(1,std::memory_order_relaxed);program_caches.fetch_add(1,std::memory_order_relaxed);}
     if(result && wheel_requested)try{driver_wheel.context_destroyed(context);wheel_sources.context_destroyed(reinterpret_cast<std::uintptr_t>(context));}catch(...){}
     if(result && avatar_enabled)try {avatar_pose.context_destroyed(context);}catch(const std::exception& error) {avatar_failed(error.what());}
     if(result && head_mask_requested) try {
@@ -544,6 +615,7 @@ struct NativeVr {
         d.pointing=hand_interactions.inspect();const auto buttons=swvr::native_hand_buttons_stats();
         d.accepted=buttons.presses_accepted;d.denied=buttons.selection_denials;d.pending=buttons.pending_events;d.blocked=buttons.blocked;d.own_hold=buttons.own_hold;d.last_denial=buttons.last_selection_denial;
         auto lines=swvr::control_diagnostic_lines(current,active_gesture_settings,d);
+        if(practice.active())lines[0]="CWICZENIA - WEJSCIE GRY WSTRZYMANE";
         if(diagnostics_enabled)hand_overlay.diagnostics(lines);
         const auto elapsed_ms=GetTickCount64()-started;
         if(record_hands_requested)flight_recorder.sample(current,active_gesture_settings,elapsed_ms,std::move(lines));
@@ -572,6 +644,41 @@ struct NativeVr {
     swvr::NumericKeypad keypad;
     std::uint64_t vehicle_keypad_generation{},vehicle_keypad_seen{};
     swvr::VrSettingsMenu settings_menu;
+    swvr::ControlPractice practice;
+    Clock::time_point wheel_guide_until{};
+    void reset_live_controls(){hand_interactions.reset();swvr::reset_native_hand_buttons();hand_locomotion.reset("practice_transition");hand_turn.reset();hand_steering.reset();menu_summon.reset();}
+    void start_practice(){
+        if(gesture_changes.pending()||menu_change||gestures_suspended||keypad.snapshot().visible){settings_menu.message("POCZEKAJ NA ZAKONCZENIE ZMIANY");menu_feedback_until=Clock::now()+std::chrono::seconds(3);return;}
+        // Serialize against native command handoff before starting simulation.
+        if(locomotion_requested&&!swvr::pause_native_locomotion(true)){settings_menu.message("NIE MOZNA WSTRZYMAC STEROWANIA");menu_feedback_until=Clock::now()+std::chrono::seconds(3);return;}
+        if(!locomotion_requested)hand_locomotion.suspend(true);
+        practice.start(active_gesture_settings);reset_live_controls();settings_menu.cancel();calibration_guided=false;t_pose_hold.reset();calibration_window.reset();
+        xr_note("control_practice","waiting_for_release");
+    }
+    void update_practice(){
+        if(!practice.active())return;
+        const auto native=swvr::native_locomotion_stats();const auto buttons=swvr::native_hand_buttons_stats();
+        practice.update(current,!native.holding&&!buttons.own_hold&&buttons.pending_events==0,native.faults||buttons.faults||buttons.blocked);
+        if(!practice.active()){
+            reset_live_controls();
+            const bool resumed=!locomotion_requested||swvr::pause_native_locomotion(false);
+            if(!locomotion_requested)hand_locomotion.suspend(false);
+            if(!resumed){gestures_suspended=true;gesture_change_failed=true;}
+            hand_overlay.status_text(resumed?"CWICZENIA ZAKONCZONE":"BLAD WZNOWIENIA - RUCH WSTRZYMANY",std::chrono::seconds(3));
+            control_feedback_until=Clock::now()+std::chrono::seconds(3);xr_note("control_practice",resumed?"finished":"resume_failed");
+        }
+    }
+    void update_input_guides(){
+        const bool training=practice.active();
+        const bool live=swvr::live_gestures_allowed(training,settings_menu.snapshot().visible||keypad.snapshot().visible||calibration_guided||t_pose_hold.holding()||gestures_suspended);
+        auto sticks=training?practice.sticks():std::array<swvr::StickVisual,2>{hand_locomotion.stick_visual(),hand_turn.stick_visual()};
+        sticks[0].hand=static_cast<unsigned>(active_gesture_settings.input.joystick_hand);sticks[1].hand=1u-sticks[0].hand;sticks[1].turn=true;
+        auto wheel=training?practice.wheel():hand_steering.grip_visual();
+        wheel.visible=wheel.visible&&(training?practice.stage()==swvr::PracticeStage::steering:live&&(active_gesture_settings.steering.show_grip||Clock::now()<wheel_guide_until));
+        const bool show_sticks=training?(practice.stage()==swvr::PracticeStage::movement||practice.stage()==swvr::PracticeStage::turn):live&&!arm_swing_requested&&active_gesture_settings.input.joystick_visual;
+        hand_overlay.input_guides(show_sticks,sticks,wheel);
+        hand_overlay.target_feedback(live?swvr::native_target_feedback(hand_interactions.inspect()):swvr::TargetFeedback{});
+    }
     swvr::VrMenuSummon menu_summon;
     std::optional<swvr::GestureChange> menu_change;
     unsigned panel_priority=1;
@@ -712,12 +819,13 @@ struct NativeVr {
         if(work_measured)gpu_timer.begin(current.id,static_cast<double>(current.predicted_display_period_ns)/1e6);
         flush_locomotion_journal(hand_recording);
         const bool was_seated=active_gesture_settings.comfort.seated;
-        if(poll_gesture_change(hand_recording,hand_overlay,std::exchange(menu_change,{}))){hand_turn.reset();hand_steering.reset();control_feedback_until=Clock::now()+std::chrono::milliseconds(1500);menu_feedback_until=control_feedback_until;settings_menu.message(gesture_notice_text);}
+        if(practice.active())for(auto request:{gesture_reload_request,joystick_mode_request,arm_mode_request,avatar_calibrate_request})if(request)WaitForSingleObject(request,0);
+        if(!practice.active()&&poll_gesture_change(hand_recording,hand_overlay,std::exchange(menu_change,{}))){hand_turn.reset();hand_steering.reset();control_feedback_until=Clock::now()+std::chrono::milliseconds(1500);menu_feedback_until=control_feedback_until;settings_menu.message(gesture_notice_text);}
         if(was_seated!=active_gesture_settings.comfort.seated){head_recenter_pending=true;calibrated_head_position.reset();comfort_motion.reset();}
         const auto next_priority=static_cast<unsigned>(active_gesture_settings.input.pointing_priority);
         if(panel_priority!=next_priority){panel_priority=next_priority;settings_menu.set_preferred_hand(panel_priority);keypad.set_preferred_hand(panel_priority);}
         if(calibration_guided&&Clock::now()>guidance_deadline){calibration_guided=false;hand_locomotion.reset("calibration_timeout");hand_overlay.status_text("KALIBRACJA - CZAS MINAL",std::chrono::milliseconds(1500));control_feedback_until=Clock::now()+std::chrono::milliseconds(1500);}
-        if(!settings_menu.snapshot().visible&&!keypad.snapshot().visible&&!calibration_guided&&menu_summon.update(current,active_gesture_settings.input.dwell_ms)){
+        if(!practice.active()&&!settings_menu.snapshot().visible&&!keypad.snapshot().visible&&!calibration_guided&&menu_summon.update(current,active_gesture_settings.input.dwell_ms)){
             menu_click();
             settings_menu.set_preferred_hand(static_cast<unsigned>(active_gesture_settings.input.pointing_priority));
             if(settings_menu.open(current,{locomotion_requested,avatar_enabled,true},active_gesture_settings,arm_swing_requested)){
@@ -755,6 +863,10 @@ struct NativeVr {
                 }catch(const std::exception& e){settings_menu.message("BRAK / BLAD PROFILU LUB ZMIANA W TOKU");menu_feedback_until=Clock::now()+std::chrono::seconds(3);xr_note("control_profile_error",e.what());}break;
                 case swvr::VrMenuAction::diagnostics_toggle:diagnostics_enabled=!diagnostics_enabled;settings_menu.diagnostics_enabled(diagnostics_enabled);settings_menu.status(active_gesture_settings,arm_swing_requested);if(!diagnostics_enabled)hand_overlay.diagnostics({});break;
                 case swvr::VrMenuAction::mark_problem:mark_problem_pending=true;break;
+                case swvr::VrMenuAction::practice:start_practice();break;
+                case swvr::VrMenuAction::wheel_grip_reset:
+                    if(swvr::native_steering_seat()){hand_steering.reset();settings_menu.cancel();wheel_guide_until=Clock::now()+std::chrono::seconds(10);hand_overlay.status_text("OTWORZ DLONIE I ZLAP KIEROWNICE",std::chrono::seconds(3));control_feedback_until=Clock::now()+std::chrono::seconds(3);}
+                    else{settings_menu.message("NAJPIERW USIADZ W FOTELU");menu_feedback_until=Clock::now()+std::chrono::seconds(3);}break;
                 case swvr::VrMenuAction::close:break;
                 default:change=swvr::adjust_vr_preferences(*action,next);if(*action==swvr::VrMenuAction::defaults)next_mode=next.input.movement_fists?swvr::LocomotionMode::arm_swing:swvr::LocomotionMode::joystick;break;
                 }
@@ -770,19 +882,21 @@ struct NativeVr {
             hand_overlay.status_text(error?"PROFIL NIEUSUNIETY - SPRAWDZ LOG":"KALIBRACJA USUNIETA",std::chrono::milliseconds(1500));
             control_feedback_until=Clock::now()+std::chrono::milliseconds(1500);
         }
-        if(keypad_request&&WaitForSingleObject(keypad_request,0)==WAIT_OBJECT_0){
+        if(keypad_request&&WaitForSingleObject(keypad_request,0)==WAIT_OBJECT_0&&!practice.active()){
             settings_menu.cancel();menu_summon.reset();calibration_guided=false;
             if(keypad.snapshot().visible)keypad.cancel();
             else if(keypad.open(current,active_gesture_settings))xr_note("keypad_prototype","opened_local_only");
             else xr_note("keypad_prototype","open_rejected_tracking_or_focus");
             hand_interactions.reset();swvr::reset_native_hand_buttons();hand_locomotion.reset();
         }
-        const auto vehicle_pad=swvr::vehicle_keypad_poll(current.running&&current.focused&&!current.terminal);
+        const auto vehicle_pad=swvr::vehicle_keypad_poll(current.running&&current.focused&&!current.terminal&&!practice.active());
         if(vehicle_keypad_generation&&(!vehicle_pad||vehicle_pad->generation!=vehicle_keypad_generation)){
             keypad.cancel();keypad.take_result();vehicle_keypad_generation=0;
             hand_overlay.status_text("KLAWIATURA ZAMKNIETA LUB ZMIENIONA",std::chrono::milliseconds(1500));
         }
-        if(vehicle_pad&&vehicle_pad->generation!=vehicle_keypad_seen&&current.focused){
+        // During practice the poll above has already queued a native cancel;
+        // the VR keypad must not open behind the practice panel.
+        if(vehicle_pad&&vehicle_pad->generation!=vehicle_keypad_seen&&current.focused&&!practice.active()){
             settings_menu.cancel();menu_summon.reset();calibration_guided=false;
             if(keypad.open_vehicle(current,active_gesture_settings,vehicle_pad->button_type,vehicle_pad->current)){
                 vehicle_keypad_generation=vehicle_keypad_seen=vehicle_pad->generation;
@@ -790,11 +904,12 @@ struct NativeVr {
                 xr_note("vehicle_keypad","opened");
             }
         }
-        keypad.update(current);if(keypad.take_click())menu_click();hand_overlay.keypad(settings_menu.snapshot().visible?settings_menu.snapshot():keypad.snapshot());
-        hand_overlay.menu_button(!settings_menu.snapshot().visible&&!keypad.snapshot().visible&&!calibration_guided?menu_summon.snapshot():swvr::PanelSnapshot{});
+        update_practice();
+        keypad.update(current);if(keypad.take_click())menu_click();hand_overlay.keypad(practice.active()?practice.snapshot():settings_menu.snapshot().visible?settings_menu.snapshot():keypad.snapshot());
+        hand_overlay.menu_button(!practice.active()&&!settings_menu.snapshot().visible&&!keypad.snapshot().visible&&!calibration_guided?menu_summon.snapshot():swvr::PanelSnapshot{});
         if(const auto result=keypad.take_result()){
             if(vehicle_keypad_generation){
-                const bool queued=swvr::vehicle_keypad_reply(vehicle_keypad_generation,result->accepted?result->native_values:std::nullopt);
+                const bool queued=swvr::vehicle_keypad_reply(vehicle_keypad_generation,result->accepted&&!practice.active()?result->native_values:std::nullopt);
                 xr_note("vehicle_keypad",queued?(result->accepted?"submit_queued":"cancel_queued"):"stale_reply_rejected");vehicle_keypad_generation=0;
             }else xr_note("keypad_prototype",result->accepted?("accepted_local value="+result->value).c_str():"cancelled");
             hand_interactions.reset();swvr::reset_native_hand_buttons();hand_locomotion.reset();
@@ -870,6 +985,7 @@ struct NativeVr {
         const bool moving=!settings_menu.snapshot().visible&&!keypad.snapshot().visible&&!calibration_guided&&!gestures_suspended&&movement.active&&(movement.forward!=0||movement.sideways!=0);
         hand_overlay.comfort(comfort_motion.update(current,active_gesture_settings.comfort,moving,frame_turn,head_fade));
         update_diagnostics();
+        update_input_guides();
         const auto submit_time=Clock::now();
         std::array<bool,2> completed{};
         bool repeated{};
@@ -920,6 +1036,8 @@ struct NativeVr {
     void close() {
         avatar_pose.end_eye();driver_wheel.end_eye();
         hand_steering.reset();swvr::vehicle_keypad_poll(false);
+        // Native movement stays paused: the session ends without resuming gestures.
+        if(practice.active())xr_note("control_practice","session_closed_during_practice");
         const auto keypad_stats=swvr::vehicle_keypad_stats();xr_note("vehicle_keypad_totals",("opened="+std::to_string(keypad_stats.opened)+" submitted="+std::to_string(keypad_stats.submitted)+" cancelled="+std::to_string(keypad_stats.cancelled)+" rejected="+std::to_string(keypad_stats.rejected)+" faults="+std::to_string(keypad_stats.faults)).c_str());
         hand_interactions.reset();
         if(locomotion_requested) {
@@ -999,6 +1117,8 @@ struct NativeVr {
                 " candidate_calls="+std::to_string(h.candidate_calls)+" masked_calls="+std::to_string(h.masked_calls);
             xr_note("head_mask_totals",masking.c_str());
         }
+        xr_note("gl_program_tracking",(std::string("state=")+(!program_tracking_requested?"off":program_tracking?"active":"reverted")+
+            " checks="+std::to_string(program_checks.load())).c_str());
         xr_note("openxr_state","closed");
     }
 };
@@ -1034,7 +1154,7 @@ void camera_owner_update(void* owner,void* graphics,float alpha,std::uint8_t fou
         native_vr->early_frame=frame.load();native_vr->frame_culls=0;native_vr->cull_failed=false;
         native_vr->base_cameras_valid=false;
         native_vr->early_renderable=native_vr->begin();
-        const bool turn_allowed=locomotion_requested&&!arm_swing_requested&&!gestures_suspended&&
+        const bool turn_allowed=swvr::live_gestures_allowed(native_vr->practice.active())&&locomotion_requested&&!arm_swing_requested&&!gestures_suspended&&
             native_vr->early_renderable&&native_vr->submitted>0&&
             (!independent_native_eyes||native_vr->resources_ready_logged)&&
             walking_first_person(owner)&&!native_vr->t_pose_hold.holding()&&!native_vr->calibration_guided&&
@@ -1116,7 +1236,7 @@ void camera_owner_update(void* owner,void* graphics,float alpha,std::uint8_t fou
         // or while newly configured native targets are still pending.
         interaction_frame.should_render=interaction_frame.should_render && native_vr->submitted>0 &&
             (!independent_native_eyes || native_vr->resources_ready_logged);
-        const bool modal=native_vr->keypad.snapshot().visible||native_vr->settings_menu.snapshot().visible||gestures_suspended;
+        const bool modal=!swvr::live_gestures_allowed(native_vr->practice.active(),native_vr->keypad.snapshot().visible||native_vr->settings_menu.snapshot().visible||gestures_suspended);
         const bool walking_allowed=locomotion_requested&&walking_first_person(owner)&&!native_vr->t_pose_hold.holding()&&!native_vr->calibration_guided&&!modal;
         const auto gesture_now=NativeVr::Clock::now();
         hand_steering.publish(interaction_frame,active_gesture_settings,swvr::native_steering_seat(),!modal&&!native_vr->calibration_guided&&!native_vr->t_pose_hold.holding(),gesture_now);
@@ -1345,7 +1465,7 @@ void render(void* renderer,void* graphics,void* scene,void* commands,void* targe
                         native_vr->current.space_revision,++native_vr->avatar_calibration_generation);
                     if(native_vr->avatar_body)xr_note("avatar_profile","bound_to_live_local_actor");
                 }
-                if(eye==0&&!native_vr->keypad.snapshot().visible&&!native_vr->settings_menu.snapshot().visible) {
+                if(eye==0&&!native_vr->practice.active()&&!native_vr->keypad.snapshot().visible&&!native_vr->settings_menu.snapshot().visible) {
                     // Calibrate on the explicit signal, or automatically once a valid
                     // T-pose has been held for 1.5 s (once per hold). The hand
                     // skeletons flash green/red so the result is visible in the headset.
@@ -1562,15 +1682,17 @@ swvr::GlDriverWheel::Draw wheel_draw() noexcept {
     return {};
 }
 void APIENTRY elements(GLenum mode,GLsizei count,GLenum type,const void* indices) {
-    apply_head_mask(head_eye_active());
-    auto avatar=avatar_draw();
-    auto wheel=wheel_draw();
+    const auto tracked=tracked_program();
+    mask_bound_program(tracked,head_eye_active());
+    auto avatar=!tracked||tracked->wants(avatar_consumer)?avatar_draw():swvr::GlAvatarPose::Draw{};
+    auto wheel=!tracked||tracked->wants(wheel_consumer)?wheel_draw():swvr::GlDriverWheel::Draw{};
     record("draw_elements",mode,count,type,_ReturnAddress());real_elements(mode,count,type,indices);
 }
 void APIENTRY arrays(GLenum mode,GLint first,GLsizei count) {
-    apply_head_mask(head_eye_active());
-    auto avatar=avatar_draw();
-    auto wheel=wheel_draw();
+    const auto tracked=tracked_program();
+    mask_bound_program(tracked,head_eye_active());
+    auto avatar=!tracked||tracked->wants(avatar_consumer)?avatar_draw():swvr::GlAvatarPose::Draw{};
+    auto wheel=!tracked||tracked->wants(wheel_consumer)?wheel_draw():swvr::GlDriverWheel::Draw{};
     record("draw_arrays",mode,first,count,_ReturnAddress());real_arrays(mode,first,count);
 }
 void APIENTRY viewport(GLint x,GLint y,GLsizei width,GLsizei height) {
@@ -1602,6 +1724,10 @@ extern "C" __declspec(dllexport) DWORD WINAPI swvr_trace_start(void* log_path) {
     wchar_t trace_option[8]{};
     collect_events=!(GetEnvironmentVariableW(L"SWVR_TRACE_EVENTS",trace_option,8)>0 && !wcscmp(trace_option,L"0"));
     fprintf(output,"#trace_events\t%s\n",collect_events?"enabled":"disabled_for_timing");
+    wchar_t tracking_option[8]{};
+    program_tracking_requested=!(GetEnvironmentVariableW(L"SWVR_PROGRAM_TRACKING",tracking_option,8)>0 && !wcscmp(tracking_option,L"0"));
+    program_tracking=program_tracking_requested;
+    fprintf(output,"#gl_program_tracking\t%s\n",program_tracking_requested?"on":"off");
     const auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
     const auto nt=reinterpret_cast<const IMAGE_NT_HEADERS64*>(base+dos->e_lfanew);
     const auto hash=image_sha256();
@@ -1619,7 +1745,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI swvr_trace_start(void* log_path) {
         std::filesystem::path(host_path).filename()==L"swvr_head_mask_injection_tests.exe";
     head_mask_requested=head_mask_fixture || (hash==swvr::game_profile::sha256 &&
         GetEnvironmentVariableW(L"SWVR_HEAD_MASK",head_option,8)>0 && !wcscmp(head_option,L"1"));
-    if(head_mask_requested) {head_mask.configure(original_gl_proc);head_mask_enabled=true;}
+    if(head_mask_requested) {head_mask.configure(original_gl_proc);head_mask_enabled=true;program_caches.fetch_add(1);}
     fprintf(output,"#head_mask_mode\t%s\n",head_mask_fixture?"isolated_test_host":head_mask_enabled?"vr_local_head":"off");
     if(hash==swvr::game_profile::sha256) {
         wchar_t scene_option[24]{};
@@ -1746,7 +1872,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI swvr_trace_start(void* log_path) {
             rigs[i]=swvr::read_avatar_rig(bytes);
         }
         avatar_identity=std::make_unique<swvr::NativeAvatarIdentity>(executable_base,true);
-        avatar_pose.configure(original_gl_proc,std::move(rigs));avatar_pose.set_journal(120,20000);avatar_enabled=true;
+        avatar_pose.configure(original_gl_proc,std::move(rigs));avatar_pose.set_journal(120,20000);avatar_enabled=true;program_caches.fetch_add(1);
         xr_note("avatar_pose","configured_survivor_head_arms");
     }catch(const std::exception& error) {avatar_enabled=false;xr_note("openxr_error",error.what());}
     const auto retirement_status=swvr::install_native_button_retirement(executable_base,hash==swvr::game_profile::sha256,diagnostic_base);
@@ -1777,7 +1903,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI swvr_trace_start(void* log_path) {
             if(steering_ready)try{
                 auto mesh=swvr::load_driver_seat_mesh(std::filesystem::path(host_path).parent_path()/L"rom"/L"meshes"/L"component_seat_racing.mesh");
                 if(!swvr::install_native_driver_seat(executable_base,hash==swvr::game_profile::sha256))throw std::runtime_error("Driver seat observer could not be installed");
-                driver_wheel.configure(original_gl_proc,std::move(mesh.points));wheel_requested=true;wheel_enabled=true;
+                driver_wheel.configure(original_gl_proc,std::move(mesh.points));wheel_requested=true;wheel_enabled=true;program_caches.fetch_add(1);
                 xr_note("driver_wheel","ready_local_driver_seat_geometry");
             }catch(const std::exception& error){xr_note("driver_wheel_error",error.what());}
         }

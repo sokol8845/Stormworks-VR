@@ -194,10 +194,32 @@ int main(int argc,char** argv) {
             fallback.values(2,.25f,.1f);require(!target.visible(),"original near behavior lost after compile fallback");
             trace.set(false);
             require(glGetError()==GL_NO_ERROR,"GL error during DLL hook integration");
+            // Program tracking: the hooks learn the bound program from glUseProgram
+            // instead of asking the driver on every draw and uniform write.
+            trace.set(true);supported.values(2,.25f,.75f);
+            // A rejected glUseProgram leaves the patched program bound.
+            gl.use(0x7fffffffu);require(glGetError()==GL_INVALID_VALUE,"fixture expected a rejected glUseProgram");
+            require(!target.visible() && !target.visible(true),"head mask lost after a rejected glUseProgram");
+            // One long binding crosses the periodic comparison with the driver.
+            const auto alpha=gl.location(supported.id,"test_alpha"),weight=gl.location(supported.id,"bone_clip_weight");
+            for(int i=0;i<600;++i){gl.scalar(alpha,1);require(!target.visible(i%2!=0),"head mask lost during a long binding");}
+            // The head selection is still read per draw within one binding.
+            gl.scalar(weight,.5f);require(target.visible(),"mask kept after the selection changed within one binding");
+            gl.scalar(weight,.25f);require(!target.visible(),"mask not restored within one binding");
+            plain.values(-1,.25f,.75f,0);for(int i=0;i<300;++i)require(target.visible(i%2!=0),"unpatched program affected during a long binding");
+            supported.values(2,.25f,.75f);require(!target.visible(),"mask not applied after returning from an unpatched program");
+            // Relinking the bound program invalidates what the hooks knew about it.
+            gl.link(supported.id);supported.values(2,.25f,.75f);require(!target.visible(),"mask lost after relinking the bound program");
+            gl.use(0);require(glGetError()==GL_NO_ERROR,"GL error during program tracking scenarios");
+            trace.set(false);supported.values(2,.25f,.75f);require(target.visible(),"normal head did not return after the tracking scenarios");
         }
         require(trace.flush(nullptr)>0,"trace flush returned no captured events");
         std::ifstream log(trace.path);require(log.good(),"trace log missing");const std::string text((std::istreambuf_iterator<char>(log)),{});
         for(const char* token:{"#state\tinitialized","swvr_vr_head_mask","draw_arrays","draw_elements"})require(text.find(token)!=std::string::npos,"integration trace evidence missing");
+        // SWVR_PROGRAM_TRACKING=0 runs the same scenarios on the driver-query path.
+        std::array<wchar_t,8> tracking{};const bool tracked=!(GetEnvironmentVariableW(L"SWVR_PROGRAM_TRACKING",tracking.data(),8)>0 && std::wstring_view(tracking.data())==L"0");
+        require(text.find(tracked?"#gl_program_tracking\ton":"#gl_program_tracking\toff")!=std::string::npos,"program tracking mode not recorded");
+        require(text.find("mismatch_reverted")==std::string::npos,"program tracking diverged from the driver and reverted");
         require(text.find("compile_failed_restored_original")!=std::string::npos,"compile fallback evidence missing");
         verify_disabled_guard();
         std::cout<<"PASS head-mask DLL injection: multipart explicit lengths, real shader/draw hooks, far/near pixels, signature gates, normal restore and guarded export\nTrace: "<<trace.path.string()<<'\n';return 0;

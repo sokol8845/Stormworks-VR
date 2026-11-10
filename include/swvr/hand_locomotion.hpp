@@ -2,6 +2,7 @@
 #include "swvr/xr_runtime.hpp"
 #include "swvr/arm_swing.hpp"
 #include "swvr/locomotion_event.hpp"
+#include "swvr/input_visuals.hpp"
 #include <deque>
 #include <chrono>
 #include <mutex>
@@ -34,6 +35,7 @@ public:
     // cannot become newer than a timestamp captured while waiting for it.
     LocomotionCommand inspect(Clock::time_point now=Clock::time_point::max());
     LocomotionCommand diagnostic_command(); // No freshness gate; diagnostics only.
+    StickVisual stick_visual(){std::lock_guard lock(mutex_);return visual_;}
     void reset(const char* static_reason="external");
     void set_mode(LocomotionMode);
     void configure(const GestureSettings&);
@@ -58,6 +60,7 @@ private:
     const char* status_{};
     const char* native_block_{};
     LocomotionCommand command_;
+    StickVisual visual_;
     std::optional<Clock::time_point> published_;
     std::optional<std::int64_t> last_xr_time_;
     std::uint64_t revision_{},frame_{};

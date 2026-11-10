@@ -1,4 +1,6 @@
 #include "swvr/gl_hand_overlay.hpp"
+#include "swvr/control_practice.hpp"
+#include "steering_fixture.hpp"
 #include "swvr/vr_settings_menu.hpp"
 #include "swvr/gl_gpu_timer.hpp"
 #include <windows.h>
@@ -143,6 +145,22 @@ RayPixels green_ray(const std::vector<unsigned char>& pixels) {
         if(pixels[i]<70 && pixels[i+1]>240 && pixels[i+2]>50 && pixels[i+2]<120){++result.count;result.rightmost=std::max(result.rightmost,x);}}
     return result;
 }
+// Pixels the second image changed relative to the first.
+struct Pixel {int x{},y{},r{},g{},b{};bool operator==(const Pixel&) const=default;};
+std::vector<Pixel> added(const std::vector<unsigned char>& before,const std::vector<unsigned char>& after) {
+    std::vector<Pixel> result;
+    for(int y=0;y<Image::size;++y)for(int x=0;x<Image::size;++x){const auto i=(y*Image::size+x)*4;
+        if(before[i]!=after[i]||before[i+1]!=after[i+1]||before[i+2]!=after[i+2])result.push_back({x,y,after[i],after[i+1],after[i+2]});}
+    return result;
+}
+template<class F>int count(const std::vector<Pixel>& pixels,F&& match){return static_cast<int>(std::count_if(pixels.begin(),pixels.end(),match));}
+int rightmost(const std::vector<Pixel>& pixels){int result=-1;for(const auto& p:pixels)result=std::max(result,p.x);return result;}
+// Overlay colours as written to both the linear and the sRGB eye image.
+bool green(const Pixel& p){return p.r<70&&p.g>240&&p.b>50&&p.b<120;}        // ready target, held wheel
+bool amber(const Pixel& p){return p.r>240&&p.g>135&&p.g<190&&p.b<70;}        // blocked/held click, sprint, free wheel
+bool grey(const Pixel& p){return std::abs(p.r-140)<=12&&std::abs(p.g-140)<=12&&std::abs(p.b-140)<=12;} // unconfirmed ray
+bool dim(const Pixel& p){return std::abs(p.r-102)<=12&&std::abs(p.g-102)<=12&&std::abs(p.b-102)<=12;}  // idle joystick
+bool blue(const Pixel& p){return p.r<80&&p.g>180&&p.g<225&&p.b>240;}         // active joystick
 int rightmost_geometry(const std::vector<unsigned char>& pixels) {
     int result=-1;
     for(int y=0;y<Image::size;++y)for(int x=0;x<Image::size;++x){const auto i=(y*Image::size+x)*4;
@@ -301,6 +319,39 @@ int main(int argc,char** argv) {
                     navigate(swvr::VrMenuAction::steering_page);export_page("vr-steering-menu-20261106.ppm");
                     navigate(swvr::VrMenuAction::tools_page);navigate(swvr::VrMenuAction::profiles_page);export_page("vr-profiles-menu-20261106.ppm");
                     overlay.diagnostics({"TRYB: JOYSTICK / TYLKO PRZOD","L: PIESC / RUCH / P: PIESC / OBROT","RUCH PRZOD 0.50 BOK 0.00","OBROT 45 DEG/S / SPRINT NIE","KIER 0.00 / KAT 0 DEG","POJAZD NIE / KLIK: MENU VR","KLIK OK 15 / ODMOWY 18","OST. ODMOWA: TARGET/MISMATCH"});export_page("vr-diagnostics-20261106.ppm");overlay.diagnostics({});
+                    // Walking pages, practice panel, input guides and the ray states.
+                    navigate(swvr::VrMenuAction::tools_page);navigate(swvr::VrMenuAction::back);navigate(swvr::VrMenuAction::movement_page);
+                    auto guided=accessible;guided.input.joystick_visual=true;menu.status(guided,false);require(menu.snapshot().title=="CHODZENIE","movement page missing");export_page("vr-movement-menu-20261110.ppm");
+                    navigate(swvr::VrMenuAction::movement_tuning_page);menu.status(guided,false);require(menu.snapshot().title=="REGULACJA CHODZENIA","walking adjustment page missing");export_page("vr-walking-tuning-menu-20261110.ppm");
+                    overlay.keypad({});
+                    const auto shot=[&](swvr::XrRuntimeFrame scene,const char* name,bool with_ray=false){
+                        for(unsigned i=0;i<2;++i){scene.eyes[i].texture=textures[i];scene.eyes[i].width=scene.eyes[i].height=extent;scene.eyes[i].fov=preview.eyes[i].fov;}
+                        std::fill(pixels.begin(),pixels.end(),0);for(const auto texture:textures){glBindTexture(GL_TEXTURE_2D,texture);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,extent,extent,0,GL_RGBA,GL_UNSIGNED_BYTE,pixels.data());}
+                        const State shot_state(gl);overlay.draw(scene,with_ray);require(State(gl)==shot_state,"guide scene changed host GL state");glBindTexture(GL_TEXTURE_2D,textures[0]);glGetTexImage(GL_TEXTURE_2D,0,GL_RGBA,GL_UNSIGNED_BYTE,pixels.data());
+                        require(std::any_of(pixels.begin(),pixels.end(),[](auto value){return value!=0;}),"guide scene is empty");
+                        for(int y=0;y<extent;++y)for(int x=0;x<extent;++x)for(unsigned c=0;c<3;++c)rgb[static_cast<std::size_t>((y*extent+x)*3)+c]=pixels[static_cast<std::size_t>(((extent-1-y)*extent+x)*4)+c];
+                        std::ofstream file(std::filesystem::path(argv[1])/name,std::ios::binary);file<<"P6\n"<<extent<<' '<<extent<<"\n255\n";file.write(reinterpret_cast<const char*>(rgb.data()),static_cast<std::streamsize>(rgb.size()));};
+                    // The host assigns the rings to hands; the detectors only report deflection.
+                    const auto rings=[](std::array<swvr::StickVisual,2> sticks){sticks[0].hand=0;sticks[1].hand=1;sticks[1].turn=true;return sticks;};
+                    {swvr::ControlPractice practice;swvr::GestureSettings training;training.steering.smoothing_ms=0;practice.start(training);std::uint64_t id{};
+                     const auto step=[&](swvr::XrRuntimeFrame scene){scene.id=++id;scene.predicted_display_time_ns+=static_cast<std::int64_t>(id)*20'000'000;practice.update(scene,true,false);return scene;};
+                     auto scene=step(swvr::steering_fixture::hands(0,false,false));overlay.keypad(practice.snapshot());overlay.input_guides(true,rings(practice.sticks()),practice.wheel());shot(scene,"vr-practice-waiting-20261110.ppm");
+                     for(int n=0;n<13;++n)scene=step(swvr::steering_fixture::hands(0,false,false));require(practice.phase()==swvr::PracticePhase::running,"practice scene did not start");
+                     step(swvr::steering_fixture::hands(0));auto moving=swvr::steering_fixture::hands(0);for(auto& j:moving.hands[0].joints){j.pose.position.z-=.14f;j.pose.position.x+=.04f;}scene=step(moving);
+                     require(practice.sticks()[0].sprint,"practice scene has no active joystick");
+                     overlay.keypad(practice.snapshot());overlay.input_guides(true,rings(practice.sticks()),practice.wheel());shot(scene,"vr-practice-movement-20261110.ppm");overlay.keypad({});overlay.input_guides(false,{},{});}
+                    {swvr::HandSteering steering;swvr::GestureSettings wheel_settings;wheel_settings.steering.smoothing_ms=0;std::uint64_t id{};swvr::XrRuntimeFrame scene;
+                     const auto step=[&](float angle,bool closed){scene=swvr::steering_fixture::hands(angle,closed,closed);scene.id=++id;scene.predicted_display_time_ns+=static_cast<std::int64_t>(id)*20'000'000;steering.publish(scene,wheel_settings,42,true);};
+                     step(0,false);overlay.input_guides(false,{},steering.grip_visual());shot(scene,"vr-wheel-grip-open-20261110.ppm");
+                     step(0,true);for(int n=1;n<=6;++n)step(static_cast<float>(n)*.05f,true);require(steering.grip_visual().established&&steering.grip_visual().held[0],"wheel scene has no grip");
+                     overlay.input_guides(false,{},steering.grip_visual());shot(scene,"vr-wheel-grip-held-20261110.ppm");overlay.input_guides(false,{},{});}
+                    {auto scene=swvr::steering_fixture::hands(0,false,false);scene.id=900;swvr::StickVisual idle_move,idle_turn;idle_move.hand=0;idle_turn.hand=1;idle_turn.turn=true;
+                     const std::array<std::pair<swvr::TargetFeedback,const char*>,4> cases{{{{},"vr-target-ray-unknown-20261110.ppm"},{{swvr::TargetFeedbackState::ready,{},{},"ready"},"vr-target-ray-ready-20261110.ppm"},
+                         {{swvr::TargetFeedbackState::blocked,{},{},"unsupported_button_type"},"vr-target-ray-blocked-20261110.ppm"},{{swvr::TargetFeedbackState::held,{},{},"held"},"vr-target-ray-held-20261110.ppm"}}};
+                     // Worst case for clutter: joystick rings switched on while a click is refused.
+                     overlay.input_guides(true,{idle_move,idle_turn},{});
+                     for(auto [feedback,name]:cases){feedback.observed=swvr::HandInteractionClock::now();overlay.target_feedback(feedback);shot(scene,name,true);}
+                     overlay.target_feedback({});overlay.input_guides(false,{},{});}
                     overlay.keypad({});swvr::VrMenuSummon launcher;launcher.update(preview);require(launcher.snapshot().visible,"MENU touch tile missing");overlay.menu_button(launcher.snapshot());
                     std::fill(pixels.begin(),pixels.end(),0);for(const auto texture:textures){glBindTexture(GL_TEXTURE_2D,texture);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,extent,extent,0,GL_RGBA,GL_UNSIGNED_BYTE,pixels.data());}
                     const State launcher_state(gl);overlay.draw(preview);require(State(gl)==launcher_state,"MENU touch tile changed host GL state");glBindTexture(GL_TEXTURE_2D,textures[0]);glGetTexImage(GL_TEXTURE_2D,0,GL_RGBA,GL_UNSIGNED_BYTE,pixels.data());
@@ -311,6 +362,12 @@ int main(int argc,char** argv) {
                 }
                 overlay.keypad({});left.reset();right.reset();host.set(host_read,host_draw);overlay.draw(empty);
                 require(left.read()==Image::background()&&right.read()==Image::background(),"closed keypad remained visible");
+                // Punctuation used by help and practice texts has its own glyph, not a gap.
+                for(const char* mark:{",","=",";"}){overlay.status_text("AAAA",std::chrono::milliseconds(80));left.reset();right.reset();host.set(host_read,host_draw);overlay.draw(empty);const auto letters=left.read();
+                    overlay.status_text(std::string("AA")+mark+"AA",std::chrono::milliseconds(80));left.reset();right.reset();host.set(host_read,host_draw);overlay.draw(empty);const auto marked=left.read();
+                    overlay.status_text("AA AA",std::chrono::milliseconds(80));left.reset();right.reset();host.set(host_read,host_draw);overlay.draw(empty);
+                    require(marked!=left.read()&&marked!=letters,"punctuation mark is drawn as an empty gap");}
+                Sleep(120);left.reset();right.reset();overlay.draw(empty);require(left.read()==Image::background(),"punctuation probe text did not expire");
             }
             for(int scenario=0;scenario<5;++scenario) {
                 // Text remains visible with both hands lost and preserves GL
@@ -347,14 +404,33 @@ int main(int argc,char** argv) {
             left.reset();right.reset();host.set(host_read,host_draw);overlay.draw(frame);
             const auto bones_left=left.read(),bones_right=right.read();
             require(green_ray(bones_left).count==0 && green_ray(bones_right).count==0,"default overlay unexpectedly drew a ray");
-            left.reset();right.reset();host.set(host_read,host_draw);const State ray_state(gl);overlay.draw(frame,true);
-            require(State(gl)==ray_state,"ray overlay changed host GL state");
-            const auto ray_left=green_ray(left.read()),ray_right=green_ray(right.read());
-            require(ray_left.count>=25 && ray_right.count>=25,"enabled pointing ray pixels missing");
-            require(ray_left.rightmost>rightmost_geometry(bones_left)+20 && ray_right.rightmost>rightmost_geometry(bones_right)+20,"ray did not extend beyond finger bones");
+            // What the ray adds to the skeleton, per eye, for a given native confirmation.
+            const auto ray=[&](swvr::TargetFeedback feedback,unsigned hand=1){overlay.target_feedback(feedback);left.reset();right.reset();host.set(host_read,host_draw);const State ray_state(gl);overlay.draw(frame,true,hand);
+                require(State(gl)==ray_state,"ray overlay changed host GL state");return std::array{added(bones_left,left.read()),added(bones_right,right.read())};};
+            const auto confirmed=[](swvr::TargetFeedbackState state,const char* reason,std::chrono::milliseconds age=std::chrono::milliseconds(0)){
+                swvr::TargetFeedback f;f.state=state;f.reason=reason;f.observed=swvr::HandInteractionClock::now()-age;return f;};
+            // No native confirmation: a grey ray that promises nothing, and no words.
+            const auto plain=ray({});
+            for(const auto& eye:plain)require(count(eye,grey)>=25&&count(eye,grey)==static_cast<int>(eye.size()),"unconfirmed pointing ray is not plain grey");
+            require(rightmost(plain[0])>rightmost_geometry(bones_left)+20 && rightmost(plain[1])>rightmost_geometry(bones_right)+20,"ray did not extend beyond finger bones");
             // Expected endpoint projection for tip(.05,0,-1.05), a 45-degree
             // direction and a 3 m segment, with the two +/-32 mm eye offsets.
-            require(std::abs(ray_left.rightmost-108)<=2 && std::abs(ray_right.rightmost-107)<=2,"ray length/direction or eye projection wrong");
+            require(std::abs(rightmost(plain[0])-108)<=2 && std::abs(rightmost(plain[1])-107)<=2,"ray length/direction or eye projection wrong");
+            // The game accepted this button: the same ray in green, still without text.
+            const auto ready=ray(confirmed(swvr::TargetFeedbackState::ready,"ready"));
+            for(unsigned eye=0;eye<2;++eye)require(count(ready[eye],green)>=25&&count(ready[eye],green)==static_cast<int>(ready[eye].size())&&ready[eye].size()==plain[eye].size()&&rightmost(ready[eye])==rightmost(plain[eye]),
+                "confirmed target is not the same ray in green");
+            // A click that cannot happen: amber ray plus its short reason in both eyes.
+            for(const auto& stopped:{confirmed(swvr::TargetFeedbackState::blocked,"unsupported_button_type"),confirmed(swvr::TargetFeedbackState::held,"held")}){const auto shown=ray(stopped);
+                for(unsigned eye=0;eye<2;++eye)require(count(shown[eye],amber)>static_cast<int>(plain[eye].size())+10&&count(shown[eye],green)==0&&count(shown[eye],grey)==0,"blocked or held click lacks the amber ray and its reason");}
+            // The confirmation is a 100 ms lease: old, future-dated or withdrawn ones are grey again.
+            for(const auto& stale:{confirmed(swvr::TargetFeedbackState::ready,"ready",std::chrono::milliseconds(150)),confirmed(swvr::TargetFeedbackState::blocked,"pending",std::chrono::milliseconds(150)),confirmed(swvr::TargetFeedbackState::ready,"ready",std::chrono::milliseconds(-1000)),swvr::TargetFeedback{}}){
+                const auto shown=ray(stale);for(unsigned eye=0;eye<2;++eye)require(shown[eye].size()==plain[eye].size()&&count(shown[eye],grey)==static_cast<int>(plain[eye].size()),"expired or invalid confirmation kept its colour or text");}
+            {const auto shown=ray(confirmed(swvr::TargetFeedbackState::ready,"ready"));require(count(shown[0],green)>=25,"fresh confirmation missing before the expiry check");Sleep(130);
+             left.reset();right.reset();host.set(host_read,host_draw);overlay.draw(frame,true);require(count(added(bones_left,left.read()),green)==0&&count(added(bones_left,left.read()),grey)>=25,"confirmation did not expire on its own");}
+            // The ray belongs to the hand that points: none for the idle left hand here.
+            require(ray(confirmed(swvr::TargetFeedbackState::ready,"ready"),0)[0].empty(),"ray drawn for a hand that is not tracked");
+            overlay.target_feedback({});
             for(int scenario=0;scenario<10;++scenario) {
                 frame=valid_ray_frame;
                 if(scenario==0)frame.focused=false;
@@ -372,6 +448,56 @@ int main(int argc,char** argv) {
                 left.reset();right.reset();host.set(host_read,host_draw);const State no_ray_state(gl);overlay.draw(frame,true);
                 require(State(gl)==no_ray_state,"suppressed ray changed host GL state");
                 require(left.read()==expected_left && right.read()==expected_right,"invalid/unfocused ray changed existing skeleton policy");
+            }
+            {   // The same ray from the left hand when it is the one pointing.
+                frame=valid_ray_frame;frame.hands[0]=frame.hands[1];frame.hands[1]={};overlay.target_feedback({});
+                left.reset();right.reset();host.set(host_read,host_draw);overlay.draw(frame,false);const auto left_bones=left.read();
+                left.reset();right.reset();host.set(host_read,host_draw);overlay.draw(frame,true,0);
+                require(count(added(left_bones,left.read()),grey)>=25,"left pointing hand has no ray");
+            }
+            {   // Joystick rings and wheel grip zone, head-locked in both eyes.
+                auto guide=valid_ray_frame;guide.hands={};guide.id=77;guide.space_revision=3;
+                const auto shown=[&]{left.reset();right.reset();host.set(host_read,host_draw);const State guide_state(gl);overlay.draw(guide);
+                    require(State(gl)==guide_state,"input guides changed host GL state");return std::array{added(Image::background(),left.read()),added(Image::background(),right.read())};};
+                const auto side=[](const std::vector<Pixel>& pixels,bool(*match)(const Pixel&),bool right_half){return count(pixels,[&](const Pixel& p){return match(p)&&(p.x>=Image::size/2)==right_half;});};
+                swvr::StickVisual idle_move,idle_turn;idle_move.hand=0;idle_turn.hand=1;idle_turn.turn=true;
+                overlay.input_guides(false,{idle_move,idle_turn},{});require(shown()[0].empty()&&shown()[1].empty(),"disabled joystick guides were drawn");
+                overlay.input_guides(true,{idle_move,idle_turn},{});
+                for(const auto& eye:shown())require(side(eye,dim,false)>=30&&side(eye,dim,true)>=30&&count(eye,blue)==0&&count(eye,amber)==0,"idle joystick rings missing from an eye or drawn as active");
+                // Walking stick of the left hand, pushed half way forward.
+                swvr::StickVisual move{true,false,false,false,0,{0,0,-.06f},.03f,.12f,guide.id,guide.space_revision};
+                overlay.input_guides(true,{move,idle_turn},{});const auto walking=shown();
+                for(const auto& eye:walking)require(side(eye,blue,false)>=30&&side(eye,blue,true)==0&&side(eye,dim,true)>=30,"active walking stick not on its own hand's side");
+                auto neutral=move;neutral.displacement={};overlay.input_guides(true,{neutral,idle_turn},{});
+                require(shown()[0]!=walking[0],"joystick marker ignored the hand's displacement");
+                auto sprint=move;sprint.sprint=true;overlay.input_guides(true,{sprint,idle_turn},{});
+                for(const auto& eye:shown())require(side(eye,amber,false)>=30&&count(eye,blue)==0,"sprint is not shown in its own colour");
+                // Forward-only walking ignores sideways motion, exactly like the command.
+                auto forward=move;forward.forward_only=true;auto drifting=forward;drifting.displacement.x=.06f;
+                overlay.input_guides(true,{forward,idle_turn},{});const auto straight=shown();overlay.input_guides(true,{drifting,idle_turn},{});
+                require(shown()[0]==straight[0],"forward-only guide shows a sideways deflection the game never receives");
+                // Turning stick of the other hand.
+                swvr::StickVisual turn{true,true,false,false,1,{.06f,0,0},.03f,.12f,guide.id,guide.space_revision};
+                overlay.input_guides(true,{idle_move,turn},{});
+                for(const auto& eye:shown())require(side(eye,blue,true)>=30&&side(eye,blue,false)==0,"active turning stick not on its own hand's side");
+                // Hands swapped in the settings: walking on the right, turning on the left.
+                auto right_move=move;right_move.hand=1;auto left_turn=idle_turn;left_turn.hand=0;overlay.input_guides(true,{right_move,left_turn},{});
+                for(const auto& eye:shown())require(side(eye,blue,true)>=30&&side(eye,blue,false)==0,"walking stick did not follow the joystick hand");
+                // A sample from another frame or reference space is history, not input.
+                for(int cause=0;cause<3;++cause){auto old=move;if(cause==0)--old.frame;if(cause==1)++old.revision;if(cause==2)old.range=0;
+                    overlay.input_guides(true,{old,idle_turn},{});for(const auto& eye:shown())require(count(eye,blue)==0&&side(eye,dim,false)>=30,"stale joystick sample drawn as live input");}
+                overlay.input_guides(false,{},{});
+                // Wheel grip zone: amber while free, green once a hand holds it.
+                swvr::WheelGripVisual wheel;wheel.visible=wheel.established=true;wheel.plane.position={0,-.2f,-1};wheel.radius=.2f;wheel.frame=guide.id;wheel.revision=guide.space_revision;
+                overlay.input_guides(false,{},wheel);const auto free_wheel=shown();
+                for(const auto& eye:free_wheel)require(count(eye,amber)>=60&&count(eye,green)==0,"free wheel grip zone missing from an eye");
+                wheel.held={true,false};overlay.input_guides(false,{},wheel);
+                for(const auto& eye:shown())require(count(eye,green)>=60&&side(eye,amber,true)>=5&&side(eye,amber,false)==0,"held wheel or the free hand's marker has the wrong colour or side");
+                wheel.held={};
+                for(int cause=0;cause<3;++cause){auto old=wheel;if(cause==0)--old.frame;if(cause==1)++old.revision;if(cause==2)old.visible=false;
+                    overlay.input_guides(false,{},old);require(shown()[0].empty()&&shown()[1].empty(),"stale or hidden wheel grip zone was drawn");}
+                guide.focused=false;overlay.input_guides(true,{move,idle_turn},wheel);require(shown()[0].empty()&&shown()[1].empty(),"guides stayed visible without VR focus");
+                overlay.input_guides(false,{},{});
             }
             frame=valid_ray_frame;
             wglMakeCurrent(nullptr,nullptr);throws([&]{overlay.draw(frame);},"absent context accepted");require(wglMakeCurrent(context.dc,context.gl)!=0,"restore context");

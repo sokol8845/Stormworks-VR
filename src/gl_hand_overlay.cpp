@@ -31,8 +31,9 @@ constexpr std::size_t index_proximal=7; // XR_HAND_JOINT_INDEX_PROXIMAL_EXT in v
 static_assert(xr_thumb_tip==5 && xr_index_tip==10);
 struct Vertex {Vec3 position;std::array<float,3> color;};
 std::array<unsigned char,7> glyph(char c) {
-    constexpr std::string_view alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/-.?+:%";
-    constexpr std::array<std::array<unsigned char,7>,43> rows{{
+    // Every character used by menu, help, practice and hint texts; others draw as a gap.
+    constexpr std::string_view alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/-.?+:%,=;";
+    constexpr std::array<std::array<unsigned char,7>,46> rows{{
         {14,17,17,31,17,17,17},{30,17,17,30,17,17,30},{14,17,16,16,16,17,14},
         {30,17,17,17,17,17,30},{31,16,16,30,16,16,31},{31,16,16,30,16,16,16},
         {14,17,16,23,17,17,15},{17,17,17,31,17,17,17},{14,4,4,4,4,4,14},
@@ -45,7 +46,8 @@ std::array<unsigned char,7> glyph(char c) {
         {14,17,19,21,25,17,14},{4,12,4,4,4,4,14},{14,17,1,2,4,8,31},
         {30,1,1,14,1,1,30},{2,6,10,18,31,2,2},{31,16,16,30,1,1,30},
         {14,16,16,30,17,17,14},{31,1,2,4,8,8,8},{14,17,17,14,17,17,14},
-        {14,17,17,15,1,1,14},{1,2,2,4,8,8,16},{0,0,0,31,0,0,0},{0,0,0,0,0,0,4},{14,17,1,2,4,0,4},{0,4,4,31,4,4,0},{0,4,4,0,4,4,0},{25,26,2,4,8,11,19}
+        {14,17,17,15,1,1,14},{1,2,2,4,8,8,16},{0,0,0,31,0,0,0},{0,0,0,0,0,0,4},{14,17,1,2,4,0,4},{0,4,4,31,4,4,0},{0,4,4,0,4,4,0},{25,26,2,4,8,11,19},
+        {0,0,0,0,0,4,8},{0,0,31,0,31,0,0},{0,4,4,0,4,4,8}
     }};
     const auto at=alphabet.find(c);return at==alphabet.npos?std::array<unsigned char,7>{}:rows[at];
 }
@@ -84,6 +86,12 @@ bool usable(const XrTrackedJoint& joint) {
     return joint.position_valid && joint.position_tracked &&
         std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z);
 }
+void circle(std::vector<Vertex>& vertices,const Pose& pose,float x,float y,float z,float radius,std::array<float,3> color){
+    if(!std::isfinite(radius)||radius<=0)return;
+    for(unsigned i=0;i<48;++i){const float a=static_cast<float>(i)*.130899694f,b=static_cast<float>(i+1)*.130899694f;
+        vertices.push_back({compose(pose,Pose{{},{x+radius*std::cos(a),y+radius*std::sin(a),z}}).position,color});
+        vertices.push_back({compose(pose,Pose{{},{x+radius*std::cos(b),y+radius*std::sin(b),z}}).position,color});}
+}
 template<class T>T function(const char* name) {
     const auto p=wglGetProcAddress(name);
     if(!p || p==reinterpret_cast<PROC>(1) || p==reinterpret_cast<PROC>(2) ||
@@ -109,6 +117,7 @@ struct GlHandOverlay::Impl {
     KeypadSnapshot keypad;
     PanelSnapshot menu_button;
     ComfortVisual comfort;
+    bool show_sticks{};std::array<StickVisual,2> sticks;WheelGripVisual wheel;TargetFeedback target;
     std::vector<Vertex> vertices; // Reuse the largest frame's allocation.
     GLuint program{},vao{},vbo{};GLint matrix_location{-1};
     GLint pass_location{-1},effect_location{-1},tangents_location{-1},eye_to_head_location{-1};
@@ -267,6 +276,8 @@ void GlHandOverlay::progress(float value,std::chrono::milliseconds duration){if(
 void GlHandOverlay::keypad(const KeypadSnapshot& state){impl_->keypad=state;}
 void GlHandOverlay::menu_button(const PanelSnapshot& state){impl_->menu_button=state;}
 void GlHandOverlay::diagnostics(std::vector<std::string> lines){if(lines.size()>8)lines.resize(8);for(auto& line:lines)if(line.size()>48)line.resize(48);impl_->diagnostic_lines=std::move(lines);impl_->diagnostic_until=std::chrono::steady_clock::now()+std::chrono::milliseconds(250);}
+void GlHandOverlay::input_guides(bool enabled,std::array<StickVisual,2> sticks,WheelGripVisual wheel){impl_->show_sticks=enabled;impl_->sticks=sticks;impl_->wheel=wheel;}
+void GlHandOverlay::target_feedback(TargetFeedback value){impl_->target=value;}
 void GlHandOverlay::comfort(ComfortVisual visual){
     if(!std::isfinite(visual.fade)||!std::isfinite(visual.vignette)||!std::isfinite(visual.radius_degrees))throw std::invalid_argument("Invalid comfort visual");
     visual.fade=std::clamp(visual.fade,0.f,1.f);visual.vignette=std::clamp(visual.vignette,0.f,1.f);visual.radius_degrees=std::clamp(visual.radius_degrees,25.f,60.f);impl_->comfort=visual;
@@ -296,8 +307,14 @@ void GlHandOverlay::draw(const XrRuntimeFrame& frame,bool pointing_ray,unsigned 
                 const Vec3 end{static_cast<float>(b.x+3.0*direction[0]/length),
                     static_cast<float>(b.y+3.0*direction[1]/length),
                     static_cast<float>(b.z+3.0*direction[2]/length)};
-                constexpr std::array<float,3> color{.15f,1.f,.35f};
+                const auto& feedback=impl_->target;const auto now=std::chrono::steady_clock::now();
+                const auto state=now>=feedback.observed&&now-feedback.observed<=std::chrono::milliseconds(100)?feedback.state:TargetFeedbackState::unknown;
+                const auto color=state==TargetFeedbackState::ready?std::array<float,3>{.15f,1.f,.35f}:state==TargetFeedbackState::unknown?std::array<float,3>{.55f,.55f,.55f}:std::array<float,3>{1.f,.6f,.15f};
                 vertices.push_back({b,color});vertices.push_back({end,color});
+                const auto centre=stereo_center({frame.eyes[0].pose,frame.eyes[1].pose});
+                // Words only explain why a click cannot happen; grey and green rays speak for themselves.
+                if(state==TargetFeedbackState::blocked||state==TargetFeedbackState::held)
+                    text_vertices(vertices,centre,target_feedback_hint(feedback),-.36f,-.25f,-1.2f,.003f,color);
             }
         }
     }
@@ -332,7 +349,10 @@ void GlHandOverlay::draw(const XrRuntimeFrame& frame,bool pointing_ray,unsigned 
             const float value_cell=std::min(.005f,.38f/(6.f*static_cast<float>(std::max(std::size_t{1},k.value.size()))))*scale;
             if(k.help_mode){std::string_view remaining=k.description;const auto cell=.00215f*scale;for(unsigned row=0;row<3&&!remaining.empty();++row){std::size_t n=std::min(std::size_t{32},remaining.size());if(n<remaining.size()){const auto at=remaining.substr(0,n+1).find_last_of(' ');if(at!=remaining.npos&&at>0)n=at;}
                     text_vertices(vertices,k.panel,remaining.substr(0,n),-.205f*scale,(.252f-.022f*static_cast<float>(row))*scale,0,cell,{1.f,.9f,.5f});remaining.remove_prefix(n);while(!remaining.empty()&&remaining.front()==' ')remaining.remove_prefix(1);}}
-            else text_vertices(vertices,k.panel,k.value.empty()?"-":k.value,-.19f*scale,.235f*scale,0,value_cell,{1.f,1.f,1.f});}
+            else {text_vertices(vertices,k.panel,k.value.empty()?"-":k.value,-.19f*scale,.235f*scale,0,value_cell,{1.f,1.f,1.f});
+                std::string_view remaining=k.description;for(unsigned row=0;row<3&&!remaining.empty();++row){std::size_t n=std::min(std::size_t{32},remaining.size());if(n<remaining.size()){const auto at=remaining.substr(0,n+1).find_last_of(' ');if(at!=remaining.npos&&at>0)n=at;}
+                    text_vertices(vertices,k.panel,remaining.substr(0,n),-.20f*scale,(.17f-.025f*static_cast<float>(row))*scale,0,.002f*scale,{1.f,.9f,.5f});remaining.remove_prefix(n);while(!remaining.empty()&&remaining.front()==' ')remaining.remove_prefix(1);}
+            }}
         const auto& keys=k.buttons;
         for(std::size_t i=0;i<keys.size();++i){const auto& b=keys[i];const auto color=static_cast<int>(i)==k.pressed?std::array<float,3>{1.f,.5f,.1f}:static_cast<int>(i)==k.hover?std::array<float,3>{.15f,1.f,.35f}:std::array<float,3>{.35f,.65f,1.f};
             const auto shade=b.enabled?color:std::array<float,3>{.3f,.3f,.3f};rectangle(vertices,k.panel,b.x,b.y,0,b.width,b.height,shade);
@@ -346,6 +366,25 @@ void GlHandOverlay::draw(const XrRuntimeFrame& frame,bool pointing_ray,unsigned 
         if(!k.compact){const auto footer=k.help_mode?"POMOC - ? WLACZA KLIKANIE":k.release_required?(k.direct_touch?"COFNIJ PALEC PRZED KOLEJNYM":"ODSUN PROMIEN PRZED KOLEJNYM"):k.hover<0?"DOTKNIJ / WSKAZ I PRZYTRZYMAJ":k.direct_touch?"DOTYK":"WSKAZUJ DO KONCA PASKA";
             text_vertices(vertices,k.panel,footer,-.21f*scale,-.308f*scale,0,.002f*scale,{.8f,.8f,.8f});
             if(!k.help_mode&&!k.notice.empty())text_vertices(vertices,k.panel,k.notice,-.21f*scale,-.35f*scale,0,.00175f*scale,{.8f,1.f,.8f});}
+    }
+    if(impl_->show_sticks){const auto centre=stereo_center({frame.eyes[0].pose,frame.eyes[1].pose});
+        for(const auto& stick:impl_->sticks){const float x=stick.hand?.20f:-.20f,y=-.43f,z=-1.2f,r=.12f;
+            const bool active=stick.active&&stick.frame==frame.id&&stick.revision==frame.space_revision&&std::isfinite(stick.range)&&stick.range>0;
+            const std::array<float,3> color=active?(stick.sprint?std::array<float,3>{1.f,.6f,.15f}:std::array<float,3>{.2f,.8f,1.f}):std::array<float,3>{.4f,.4f,.4f};
+            circle(vertices,centre,x,y,z,r,color);rectangle(vertices,centre,x,y,z,.008f,.008f,color);
+            text_vertices(vertices,centre,stick.turn?(stick.hand?"P OBROT":"L OBROT"):(stick.hand?"P RUCH":"L RUCH"),x-.07f,y-r-.025f,z,.003f,color);
+            if(active){circle(vertices,centre,x,y,z,r*std::clamp(stick.dead_zone/stick.range,0.f,1.f),{.6f,.6f,.6f});
+                const float dx=stick.forward_only&&!stick.turn?0:stick.displacement.x/stick.range;
+                const float dy=stick.turn?0:stick.forward_only?std::max(0.f,-stick.displacement.z/stick.range):-stick.displacement.z/stick.range;
+                if(std::isfinite(dx)&&std::isfinite(dy))circle(vertices,centre,x+r*std::clamp(dx,-1.2f,1.2f),y+r*std::clamp(dy,-1.2f,1.2f),z,.012f,color);
+            }
+        }
+    }
+    const auto& wheel=impl_->wheel;if(wheel.visible&&wheel.frame==frame.id&&wheel.revision==frame.space_revision){
+        const std::array<float,3> color=wheel.held[0]||wheel.held[1]?std::array<float,3>{.2f,1.f,.4f}:std::array<float,3>{1.f,.7f,.2f};
+        circle(vertices,wheel.plane,0,0,0,wheel.radius,color);
+        for(unsigned h=0;h<2;++h)circle(vertices,wheel.plane,(h?1.f:-1.f)*wheel.radius,0,0,.025f,wheel.held[h]?std::array<float,3>{.2f,1.f,.4f}:std::array<float,3>{1.f,.7f,.2f});
+        text_vertices(vertices,wheel.plane,wheel.established?"STREFA CHWYTU":"OTWORZ I ZLAP OBIEMA DLONMI",-.20f,wheel.radius+.04f,0,.0025f,color);
     }
     if(!impl_->diagnostic_lines.empty()&&std::chrono::steady_clock::now()<impl_->diagnostic_until){
         const auto centre=stereo_center({frame.eyes[0].pose,frame.eyes[1].pose});

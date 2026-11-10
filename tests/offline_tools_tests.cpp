@@ -23,6 +23,16 @@ int main(int argc,char** argv){try{
     profiles.save(ControlProfile::walking,a);check(profiles.load(ControlProfile::walking)==a&&!profiles.exists(ControlProfile::walking,true),"first profile save");
     profiles.save(ControlProfile::walking,b);check(profiles.load(ControlProfile::walking)==b&&profiles.load(ControlProfile::walking,true)==a,"profile backup/roundtrip");
     profiles.save(ControlProfile::driving,a);check(profiles.load(ControlProfile::walking)==b,"profile slots overlap");
+    {GestureSettings guides=b,tuned=b;guides.input.joystick_visual=true;guides.steering.show_grip=true;
+     tuned.joystick.dead_zone_m=.02f;tuned.joystick.full_deflection_m=.2f;tuned.joystick.sprint_on_m=.16f;tuned.joystick.sprint_off_m=.1f;
+     profiles.save(ControlProfile::second_user,guides);profiles.save(ControlProfile::second_user,tuned);
+     const auto current=profiles.load(ControlProfile::second_user),backup=profiles.load(ControlProfile::second_user,true);
+     check(current==tuned&&backup==guides&&backup.input.joystick_visual&&backup.steering.show_grip&&!current.input.joystick_visual&&!current.steering.show_grip,"preview switches or walking thresholds lost in a profile or its backup");
+     const auto defaults=format_gesture_settings_ini(GestureSettings{});
+     check(defaults.find("joystick_visual=false")!=std::string::npos&&defaults.find("show_grip=false")!=std::string::npos,"new preferences are not written with their defaults");
+     // Files saved before these switches existed keep loading, with both previews off.
+     const auto older=parse_gesture_settings("[input]\nclick_sound=true\n[steering]\nsmoothing_ms=40\n");
+     check(older.input.click_sound&&!older.input.joystick_visual&&!older.steering.show_grip,"older settings file rejected or enabled a preview");}
     rejects([&]{profiles.save(static_cast<ControlProfile>(3),a);});
     {std::ofstream bad(root/"profiles"/"walking.ini");bad<<"[steering]\nsmoothing_ms=oops\n";}
     rejects([&]{profiles.save(ControlProfile::walking,a);});check(profiles.load(ControlProfile::walking,true)==a,"invalid profile destroyed good backup");

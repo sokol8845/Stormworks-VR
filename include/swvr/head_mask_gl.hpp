@@ -1,4 +1,5 @@
 #pragma once
+#include "swvr/gl_program_tracker.hpp"
 #include <cstdint>
 #include <memory>
 
@@ -20,6 +21,9 @@ public:
     // glGetUniformLocation, to avoid re-entering the caller's instrumentation.
     void configure(HeadMaskGlResolver resolver);
     bool before_draw(bool vr_active);
+    // Side-effect free. `none`: before_draw() only counts the call for this
+    // program, so a host tracking the bound program may skip it.
+    GlProgramInterest interest(void* native_context,unsigned program) const;
     // Call after every link attempt. Conservatively invalidates this name in
     // all cached contexts, including contexts that may share the program.
     void program_linked(unsigned program);

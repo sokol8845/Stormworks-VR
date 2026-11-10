@@ -103,6 +103,7 @@ int main(int argc,char** argv){try{
                 }
             }
         };
+        check(wheel.interest(gl.context,p)==GlProgramInterest::active,"patched wheel program interest");
         auto eye=[&]{seat.observed=std::chrono::steady_clock::now();wheel.begin_eye(seat,command,expected,++frame);wheel.camera_rebased(actual);};
         // Start with neutral history regardless of the preceding program.
         command.active=false;eye();wheel.end_eye();eye();render(0,0,false);wheel.end_eye();
@@ -121,8 +122,14 @@ int main(int argc,char** argv){try{
         command.seat=43;eye();render(0,0,false);wheel.end_eye();command.seat=42;
         eye();const auto loc=api.location(p,"mat_world");wheel.matrix_uploaded(loc,1,true,fm(model).data());render(0,0,false);originals();render(.7f,0,true);wheel.end_eye();
         wheel.program_linked(p);eye();render(0,0,false);originals();render(.7f,.7f,true);wheel.end_eye();
-        api.disable(position);if(normal>=0)api.disable(normal);api.delete_program(p);wheel.program_linked(p);
+        api.disable(position);if(normal>=0)api.disable(normal);api.delete_program(p);wheel.program_linked(p);check(wheel.interest(gl.context,p)==GlProgramInterest::unknown,"link did not reset wheel program interest");
     }
+    {const char* text="#version 330 core\nuniform mat4 mat_world;void main(){gl_Position=mat_world*vec4(0,0,0,1);}";const auto sh=api.create(0x8B31);api.source(sh,1,&text,nullptr);api.compile(sh);
+     const auto plain=api.program();api.attach(plain,sh);api.link(plain);GLint linked{};api.program_int(plain,0x8B82,&linked);check(linked!=0,"plain program link");api.use(plain);
+     check(wheel.interest(gl.context,plain)==GlProgramInterest::unknown,"unseen program interest");
+     const auto plain_world=api.location(plain,"mat_world");const auto plain_model=fm(model);api.upload(plain_world,1,GL_FALSE,plain_model.data());wheel.matrix_uploaded(plain_world,1,false,plain_model.data());
+     check(wheel.interest(gl.context,plain)==GlProgramInterest::none,"unpatched program not reported as skippable");
+     api.use(0);api.delete_shader(sh);api.delete_program(plain);wheel.program_linked(plain);}
     wheel.context_destroyed(gl.context);api.delete_buffers(2,buffers);
     std::cout<<"PASS GPU wheel positions/normals, depth, motion history, stereo, release, foreign/stale seat, rebase and GL cleanup; vertices="<<mesh.positions.size()<<'\n';return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

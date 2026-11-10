@@ -81,6 +81,14 @@ bool GlHeadMask::before_draw(bool vr_active) {
     api.set_integer(entry.mask,masked?1:0);++impl_->counters.uniform_writes;
     return masked;
 }
+GlProgramInterest GlHeadMask::interest(void* native_context,unsigned program) const {
+    std::lock_guard lock(impl_->mutex);
+    const auto api=impl_->contexts.find(static_cast<HGLRC>(native_context));
+    if(api==impl_->contexts.end())return GlProgramInterest::unknown;
+    const auto found=api->second.programs.find(program);
+    if(found==api->second.programs.end())return GlProgramInterest::unknown;
+    return found->second.mask>=0?GlProgramInterest::active:GlProgramInterest::none;
+}
 void GlHeadMask::program_linked(unsigned program) {
     std::lock_guard lock(impl_->mutex);
     for(auto& [handle,context]:impl_->contexts) {static_cast<void>(handle);context.programs.erase(program);}

@@ -61,6 +61,12 @@ void GlDriverWheel::matrix_uploaded(int location,int count,bool transpose,const 
     if(!p||p->active<0||location!=p->world)return;
     p->has_world=count==1&&!transpose&&values;if(p->has_world)std::copy_n(values,16,p->model.begin());
 }
+GlProgramInterest GlDriverWheel::interest(void* context,unsigned name) const {
+    std::lock_guard lock(impl_->mutex);
+    const auto c=impl_->contexts.find(static_cast<HGLRC>(context));if(c==impl_->contexts.end())return GlProgramInterest::unknown;
+    const auto p=c->second.programs.find(name);if(p==c->second.programs.end())return GlProgramInterest::unknown;
+    return p->second.active>=0?GlProgramInterest::active:GlProgramInterest::none;
+}
 void GlDriverWheel::program_linked(unsigned name){
     std::lock_guard lock(impl_->mutex);restore();
     // Shared GL objects may have been linked from a different context.

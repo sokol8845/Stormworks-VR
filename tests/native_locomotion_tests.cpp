@@ -1,4 +1,5 @@
 #include "swvr/native_locomotion.hpp"
+#include "swvr/control_practice.hpp"
 #include "steering_fixture.hpp"
 #include "native_hand_buttons_fixture.hpp"
 #include <windows.h>
@@ -248,5 +249,45 @@ int main(){try{
      put(sim,0x3c70,static_cast<unsigned char>(1));require(!native_locomotion_allows_turn(),"game UI did not block turning");put(sim,0x3c70,static_cast<unsigned char>(0));
      require(pause_native_locomotion(true)&&!native_locomotion_allows_turn(),"settings suspension did not block turning");require(pause_native_locomotion(false)&&native_locomotion_allows_turn(),"resumed native context rejected turning");
      put(holder,0,reinterpret_cast<U>(actor2_data.data()));require(!native_locomotion_allows_turn(),"new actor reused old turn context");}
-    std::cout<<"PASS: native movement ABI, whole-hand joystick, stationary two-fist sprint, game gates, release and request ownership\n";return 0;
+    {   // Control practice with the real adapter: the host pauses it like this
+        // and gives the same hand frames to simulation-only detectors.
+        Fixture f;f.bridge.configure({});f.swing_sample(0,0);f.swing_sample(-.14f,0);
+        require(packets.back().buttons[0]==0x84&&native_locomotion_stats().holding,"fixture did not start a live sprint");
+        ControlPractice practice;require(pause_native_locomotion(true),"practice could not pause the adapter");practice.start({});
+        const auto step=[&](float left,bool closed){f.swing_sample(left,0,closed);const auto s=native_locomotion_stats();practice.update(f.frame,!s.holding,s.faults!=0);};
+        step(-.14f,true);require(!native_locomotion_stats().holding&&packets.back().buttons[0]==0,"entering practice did not release the held sprint in a live callback");
+        const auto sent=packets.size();
+        for(int i=0;i<13;++i)step(0,false);require(practice.phase()==PracticePhase::running,"practice did not arm after the native release");
+        step(0,true);for(int i=0;i<30;++i)step(-.14f,true);
+        require(practice.sticks()[0].sprint,"practice detector did not see the sprint gesture");
+        require(packets.size()==sent&&!native_locomotion_stats().holding&&!f.bridge.inspect().active,"a practice gesture reached the game");
+        require(!native_locomotion_allows_turn(),"turning stayed available during practice");
+        practice.request_exit();for(int i=0;i<5;++i)step(-.14f,true);require(practice.active()&&packets.size()==sent,"exit with a closed fist finished or sent input");
+        for(int i=0;i<13;++i)step(0,false);require(!practice.active()&&packets.size()==sent,"practice did not finish cleanly on open hands");
+        require(pause_native_locomotion(false),"adapter did not resume after practice");
+        f.swing_sample(0,0);f.swing_sample(-.14f,0);require(packets.size()>sent&&packets.back().buttons[0]==0x84,"live sprint did not return after practice");
+        f.swing_sample(-.14f,0,false);require(packets.back().buttons[0]==0&&!native_locomotion_stats().holding&&allocations==frees&&native_locomotion_stats().faults==0,"post-practice release or ownership failed");
+    }
+    {   // Entering practice while the wheel is held, then turning a fist pair
+        // during practice: the seat axis is released and stays untouched.
+        Fixture f;HandSteering steering;test_locomotion_steering_setup(steering);put(actor,0x2100,U{42});f.tick();std::uint64_t id{};
+        ControlPractice practice;GestureSettings settings;settings.steering.smoothing_ms=0;bool training{};
+        const auto sample=[&](float angle,bool closed){auto frame=steering_fixture::hands(angle,closed,closed);frame.id=++id;frame.predicted_display_time_ns+=static_cast<std::int64_t>(id)*20'000'000;
+            steering.publish(frame,settings,native_steering_seat(),live_gestures_allowed(training));f.tick();
+            if(training){const auto s=native_locomotion_stats();practice.update(frame,!s.holding,s.faults!=0);}};
+        sample(0,false);sample(0,true);for(int i=1;i<=12;++i)sample(i*.05f,true);
+        require(seat_axis()>.25f&&native_locomotion_stats().holding,"fixture did not hold the wheel");
+        require(pause_native_locomotion(true),"practice could not pause steering");practice.start(settings);training=true;
+        sample(.6f,true);require(seat_axis()==0&&!native_locomotion_stats().holding,"held wheel was not released when practice started");
+        const auto nonzero=native_locomotion_stats().steering_nonzero_packets;
+        for(int i=0;i<13;++i)sample(0,false);require(practice.phase()==PracticePhase::running,"practice did not arm after the wheel release");
+        sample(0,true);for(int i=1;i<=12;++i)sample(i*.05f,true);
+        require(seat_axis()==0&&!native_locomotion_stats().holding&&native_locomotion_stats().steering_nonzero_packets==nonzero&&packets.empty()&&!steering.inspect().active,"a practice wheel turn reached the seat");
+        practice.request_exit();for(int i=0;i<13;++i)sample(0,false);require(!practice.active(),"practice did not finish on open hands");
+        training=false;require(pause_native_locomotion(false),"steering did not resume after practice");
+        // The first live frame re-identifies the seat; the grip needs open hands seen after that.
+        sample(0,false);sample(0,false);sample(0,true);for(int i=1;i<=12;++i)sample(i*.05f,true);require(seat_axis()>.25f,"live steering did not return after practice");
+        sample(.6f,false);require(!native_locomotion_stats().holding&&allocations==frees&&native_locomotion_stats().faults==0,"post-practice steering release failed");
+    }
+    std::cout<<"PASS: native movement ABI, whole-hand joystick, stationary two-fist sprint, game gates, practice isolation, release and request ownership\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

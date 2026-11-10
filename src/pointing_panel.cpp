@@ -15,6 +15,7 @@ bool valid(PanelOptions options){const auto p=options.offset;return options.dwel
 void PointingPanel::reset_input(){touch_={};dwell_={};need_clear_={};pressed_until_.reset();state_.pressed=state_.hover=-1;state_.dwell_progress=0;state_.rays={};state_.ray_targets={-1,-1};state_.touches={};state_.direct_touch=state_.release_required=false;}
 void PointingPanel::set_preferred_hand(unsigned hand){if(hand>1)throw std::invalid_argument("Invalid panel hand");preferred_=hand;reset_input();if(recorder_)recorder_->panel_priority(recording_id_,hand);}
 void PointingPanel::set_value(std::string value){state_.value=value.substr(0,40);}
+void PointingPanel::set_label(int id,std::string label){label=label.substr(0,40);for(auto* list:{&unscaled_buttons_,&state_.buttons})for(auto& b:*list)if(b.id==id)b.label=label;}
 bool PointingPanel::open(const XrRuntimeFrame& f,std::span<const PanelButton> buttons,std::string title,PanelOptions options){
     if(!head(f)||buttons.empty()||buttons.size()>32||title.size()>40)return false;
     if(!valid(options))return false;

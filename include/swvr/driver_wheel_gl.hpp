@@ -1,4 +1,5 @@
 #pragma once
+#include "swvr/gl_program_tracker.hpp"
 #include "swvr/native_driver_seat.hpp"
 #include "swvr/hand_steering.hpp"
 #include <memory>
@@ -23,6 +24,9 @@ public:
         friend class GlDriverWheel;explicit Draw(GlDriverWheel* owner):owner_(owner){};GlDriverWheel* owner_{};
     };
     Draw before_draw();
+    // Side-effect free. `none`: the program is not a patched wheel shader, so
+    // before_draw() and matrix_uploaded() return at once; a host may skip both.
+    GlProgramInterest interest(void* context,unsigned program) const;
     DriverWheelGlStats stats() const;
 private:
     void restore() noexcept;

@@ -320,7 +320,41 @@ void normal_tests() {
     }
 }
 void isolated_test(const std::string& name) {
-    if(name=="denied_press_diagnostic") {
+    if(name=="target_feedback") {
+        // The ray colour reports the game's own completed selection through
+        // the real press gate, before any click gesture is made.
+        const auto feedback=[]{return native_target_feedback(bridge.inspect());};
+        const auto reason=[&]{return std::string(feedback().reason);};
+        publish();require(feedback().state==TargetFeedbackState::unknown,"target confirmed before any native selection");
+        selection();require(feedback().state==TargetFeedbackState::ready&&std::string(target_feedback_hint(feedback()))=="CEL GRY - PRZYCISK GOTOWY","supported button not ready before the click gesture");
+        require(!native_hand_buttons_stats().own_hold&&action_count==0,"reading the target feedback acted on the game");
+        // Gaze, nested and unfinished selections never certify the hand ray.
+        publish();selection(false,false);require(feedback().state==TargetFeedbackState::unknown,"gaze selection coloured the hand ray");
+        publish();selection();publish();selection(true);require(feedback().state==TargetFeedbackState::unknown,"nested selection kept the previous confirmation");
+        publish();selection(false,true,false);require(feedback().state==TargetFeedbackState::unknown,"unfinished selection coloured the hand ray");
+        // Pointing at air, or at a component that is not a button, blocks nothing.
+        {const auto button_target=target;target=0;publish();selection();require(feedback().state==TargetFeedbackState::unknown,"empty ray reported as a blocked click");
+         target=sim;publish();selection();require(feedback().state==TargetFeedbackState::unknown,"non-button component reported as a blocked click");target=button_target;}
+        const auto definition=get<U>(target,0x58);
+        put(definition,0xda4,std::uint32_t{2});publish();selection();
+        require(feedback().state==TargetFeedbackState::blocked&&reason()=="unsupported_button_type"&&std::string(target_feedback_hint(feedback()))=="TEN TYP ELEMENTU NIE JEST OBSLUGIWANY","unsupported element shown as ready");
+        put(definition,0xda4,std::uint32_t{0});put(controller,0x520,U{});publish();selection();
+        require(feedback().state==TargetFeedbackState::blocked&&reason()=="target_mismatch","ray without a matching button shown as ready");
+        put(controller,0x520,target);put(controller,0x4bf,std::uint8_t{1});publish();selection();
+        require(feedback().state==TargetFeedbackState::blocked&&reason()=="native_hand_down","natively pressed hand shown as ready");
+        put(controller,0x4bf,std::uint8_t{});publish();selection();require(feedback().state==TargetFeedbackState::ready,"target did not become ready after the block cleared");
+        // The hand moved off the confirmed ray without a new selection.
+        auto moved=frame();for(auto i:{std::size_t(7),xr_index_tip,xr_thumb_tip})moved.hands[1].joints[i].pose.position.x+=.05f;
+        bridge.publish(moved,calibration,identity);require(feedback().state==TargetFeedbackState::unknown,"confirmation followed the hand to another place");
+        publish();selection();require(feedback().state==TargetFeedbackState::ready,"fixture lost the target");
+        reset_native_hand_buttons();require(feedback().state==TargetFeedbackState::unknown,"reset kept the confirmation");
+        publish();selection();require(feedback().state==TargetFeedbackState::ready,"target not confirmed again after reset");
+        Sleep(130);require(feedback().state==TargetFeedbackState::unknown,"confirmation outlived 100 ms");
+        publish();require(feedback().state==TargetFeedbackState::unknown,"expired confirmation revived by a new hand sample");
+        // Own hold: amber until the hand opens and the release is acknowledged.
+        accepted();require(feedback().state==TargetFeedbackState::held&&std::string(target_feedback_hint(feedback()))=="PRZYCISK TRZYMANY - OTWORZ DLON","held button not reported");
+        publish();tick();require(!native_hand_buttons_stats().own_hold&&feedback().state!=TargetFeedbackState::held,"released button still reported as held");consume_requests();
+    }else if(name=="denied_press_diagnostic") {
         put(controller,0x4bf,std::uint8_t{1});begin();tick();
         const auto first=native_hand_buttons_stats();
         require(first.selection_denials==1&&std::string(first.last_selection_denial)=="native_hand_down",
@@ -602,7 +636,7 @@ int main(int argc,char** argv) {
         require(create_count==7&&action_count==0&&allocations.empty(),"lifecycle hook installation incomplete or called native helpers");init_thunks();
         require(install_native_hand_buttons(base,true,installed_trace,bridge)==NativeHandButtonsStatus::already_installed,"duplicate install replaced state");
         if(argc>1)isolated_test(argv[1]);else {
-            normal_tests();run_child(L"keypad_then_button");run_child(L"denied_press_diagnostic");
+            normal_tests();run_child(L"target_feedback");run_child(L"keypad_then_button");run_child(L"denied_press_diagnostic");
             for(const auto name:{L"keypad_actor_changed",L"keypad_competing_hold",L"keypad_reset"})run_child(name);
             run_child(L"external_same_target");run_child(L"uncertain_request");run_child(L"uncertain_key");run_child(L"lost_context");run_child(L"reset_before_submit");
             const std::array lifecycle_cases{L"world_changed_hold",L"character_changed_hold",L"character_missing_hold",L"world_changed_pending",L"character_changed_pending",

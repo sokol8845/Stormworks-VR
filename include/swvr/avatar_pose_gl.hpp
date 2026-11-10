@@ -1,5 +1,6 @@
 #pragma once
 #include "swvr/avatar_pose.hpp"
+#include "swvr/gl_program_tracker.hpp"
 #include "swvr/native_avatar_identity.hpp"
 #include <array>
 #include <cstddef>
@@ -60,6 +61,9 @@ public:
   GlAvatarPose* owner_{};
  };
  Draw before_draw(); // Restores exact native palettes when Draw leaves scope.
+ // Side-effect free. `none`: the program has no bone palette, so before_draw()
+ // and matrix_uploaded() cannot affect any draw; a host may skip both.
+ GlProgramInterest interest(void* context,unsigned program) const;
  AvatarGlStats stats() const;
 private:
  void restore() noexcept;

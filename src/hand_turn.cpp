@@ -5,7 +5,7 @@
 #include <cmath>
 
 namespace swvr {
-void HandTurn::clear_grip() noexcept {closed_=snap_latched_=false;rate_=0;neutral_.reset();}
+void HandTurn::clear_grip() noexcept {closed_=snap_latched_=false;rate_=0;visual_={};neutral_.reset();}
 void HandTurn::reset() noexcept {clear_grip();time_.reset();frame_=revision_=0;if(recorder_)recorder_->turn_reset();}
 double HandTurn::update(const XrRuntimeFrame& f,const GestureSettings& settings,bool allowed) {
     const auto delta=update_impl(f,settings,allowed);if(recorder_)recorder_->turn(f,settings,allowed,delta,closed_);return delta;
@@ -40,12 +40,14 @@ double HandTurn::update_impl(const XrRuntimeFrame& f,const GestureSettings& sett
         const auto p=wrist.pose.position;const Vec3 relative{p.x-head.position.x,p.y-head.position.y,p.z-head.position.z};
         const float reach=std::hypot(relative.x,relative.y,relative.z);
         if(!std::isfinite(reach)||reach>1.2f){clear_grip();return 0;}
-        if(!closed_){closed_=true;neutral_=relative;axes_=head.orientation;rate_=0;return 0;}
+        if(!closed_){closed_=true;neutral_=relative;axes_=head.orientation;rate_=0;
+            visual_={true,true,false,false,1u-movement_hand,{},settings.turn.dead_zone_m,settings.turn.full_deflection_m,f.id,f.space_revision};return 0;}
         const Vec3 difference{relative.x-neutral_->x,relative.y-neutral_->y,relative.z-neutral_->z};
         const auto d=compose(inverse(Pose{axes_,{}}),Pose{{},difference}).position;
         const float distance=std::hypot(d.x,d.y,d.z);
         if(!std::isfinite(distance)||distance>.45f){clear_grip();return 0;}
         const auto& stick=settings.turn;
+        visual_={true,true,false,false,1u-movement_hand,d,stick.dead_zone_m,stick.full_deflection_m,f.id,f.space_revision};
         const float amount=std::clamp((std::abs(d.x)-stick.dead_zone_m)/(stick.full_deflection_m-stick.dead_zone_m),0.f,1.f);
         if(stick.snap){rate_=0;if(std::abs(d.x)<=stick.dead_zone_m)snap_latched_=false;
             if(amount>=.75f&&!snap_latched_){snap_latched_=true;return std::copysign(static_cast<double>(stick.snap_degrees)*.017453292519943295,d.x);}return 0;}

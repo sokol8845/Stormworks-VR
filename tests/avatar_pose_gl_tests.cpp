@@ -25,6 +25,7 @@ int main(){try{
  for(auto [kind,text]:std::array<std::pair<GLenum,const char*>,2>{{{0x8B31,vs},{0x8B30,fs}}}){auto sh=create(kind);source(sh,1,&text,nullptr);compile(sh);GLint ok{};shader_int(sh,0x8B81,&ok);require(ok!=0,"avatar shader compilation");attach(program,sh);}link(program);GLint linked{};program_int(program,0x8B82,&linked);require(linked!=0,"avatar shader link");use(program);
  GlAvatarPose avatar;avatar.configure(resolver,{rig(),rig()});avatar.set_journal(1,1000);
  const auto current=location(program,"bone_matrices[0]"),old=location(program,"bone_matrices_prev[0]"),world=location(program,"mat_world"),clip=location(program,"bone_clip_index"),weight=location(program,"bone_clip_weight");avatar.uniform_location(program,current,"bone_matrices[0]");avatar.uniform_location(program,old,"bone_matrices_prev[0]");avatar.uniform_location(program,world,"mat_world");
+ require(avatar.interest(context,program)==GlProgramInterest::active&&avatar.interest(context,program+1000)==GlProgramInterest::unknown,"skinned program interest");
  std::array<Matrix4,19> palettes;for(auto& m:palettes)m=fm(id());const auto model=fm(id());auto originals=[&]{upload(current,19,GL_FALSE,palettes[0].data());avatar.matrix_uploaded(current,19,false,palettes[0].data());upload(old,19,GL_FALSE,palettes[0].data());avatar.matrix_uploaded(old,19,false,palettes[0].data());upload(world,1,GL_FALSE,model.data());avatar.matrix_uploaded(world,1,false,model.data());};originals();integer(clip,3);scalar(weight,.25f);
  const std::array<AvatarPaletteBinding,1> bindings{{{reinterpret_cast<std::uintptr_t>(palettes.data()),reinterpret_cast<std::uintptr_t>(palettes.data())}}};
  AvatarTargets targets;targets.frame=1;targets.valid=true;targets.reference=id();targets.reference[13]=1.6;targets.head=targets.reference;targets.head[12]=.2;avatar.begin_eye(targets,{42,AvatarVariant::male,true},targets.reference,bindings);avatar.camera_rebased(targets.reference);
@@ -107,5 +108,11 @@ int main(){try{
  const auto foreign_copy=palettes;uploads(foreign_copy);{auto scope=avatar.before_draw();require(read_head(current)==palettes[3],"cache bypassed provenance for identical foreign data");}
  const auto hits=avatar.stats().cache_hits;copy[3][12]+=.01f;uploads(copy);{auto scope=avatar.before_draw();}
  require(avatar.stats().cache_hits==hits,"changed palette reused cached pose");avatar.end_eye();
+ {const char* plain_vs="#version 330 core\nuniform mat4 mat_world;void main(){gl_Position=mat_world*vec4(0,0,0,1);}";const auto plain=proc<GLuint(APIENTRY*)()>("glCreateProgram")();
+  for(auto [kind,text]:std::array<std::pair<GLenum,const char*>,2>{{{0x8B31,plain_vs},{0x8B30,fs}}}){auto sh=create(kind);source(sh,1,&text,nullptr);compile(sh);attach(plain,sh);}link(plain);GLint plain_linked{};program_int(plain,0x8B82,&plain_linked);require(plain_linked!=0,"plain shader link");use(plain);
+  require(avatar.interest(context,plain)==GlProgramInterest::unknown,"unseen program interest");
+  const auto plain_world=location(plain,"mat_world");upload(plain_world,1,GL_FALSE,model.data());avatar.matrix_uploaded(plain_world,1,false,model.data());
+  require(avatar.interest(context,plain)==GlProgramInterest::none,"program without a palette not reported as skippable");
+  avatar.program_linked(plain);require(avatar.interest(context,plain)==GlProgramInterest::unknown,"link did not reset program interest");use(program);}
  avatar.context_destroyed(context);wglMakeCurrent(nullptr,nullptr);wglDeleteContext(context);ReleaseDC(window,dc);DestroyWindow(window);std::cout<<"Avatar GPU pose, exact restore, local gating, scope, cache and relink guards passed.\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

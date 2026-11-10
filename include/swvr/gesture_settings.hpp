@@ -7,10 +7,10 @@ namespace swvr {
 enum class GestureHand : unsigned { left=0,right=1 };
 enum class JoystickActivation {whole_hand,middle_pinch};
 enum class RunActivation {two_fists,alternating};
-struct InputPreferences {GestureHand joystick_hand{GestureHand::left},pointing_priority{GestureHand::right};float menu_distance_m{1.f};bool movement_fists{true};unsigned dwell_ms{800};float menu_scale{1.f};bool click_sound{};bool operator==(const InputPreferences&)const=default;};
+struct InputPreferences {GestureHand joystick_hand{GestureHand::left},pointing_priority{GestureHand::right};float menu_distance_m{1.f};bool movement_fists{true};unsigned dwell_ms{800};float menu_scale{1.f};bool click_sound{},joystick_visual{};bool operator==(const InputPreferences&)const=default;};
 struct TurnSettings {float speed_degrees{60},dead_zone_m{.03f},full_deflection_m{.12f};bool snap{};unsigned snap_degrees{30};bool operator==(const TurnSettings&)const=default;};
 struct ComfortSettings {bool head_fade{},seated{};float vignette_strength{},vignette_radius_degrees{40};bool operator==(const ComfortSettings&)const=default;};
-struct SteeringSettings {float full_lock_degrees{90},dead_zone_degrees{1.4323945f},smoothing_ms{40};bool operator==(const SteeringSettings&)const=default;};
+struct SteeringSettings {float full_lock_degrees{90},dead_zone_degrees{1.4323945f},smoothing_ms{40};bool show_grip{};bool operator==(const SteeringSettings&)const=default;};
 struct JoystickSettings {
     bool operator==(const JoystickSettings&)const=default;
     JoystickActivation activation{JoystickActivation::whole_hand};

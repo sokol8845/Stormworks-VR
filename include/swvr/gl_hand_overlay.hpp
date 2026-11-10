@@ -2,6 +2,8 @@
 #include "swvr/xr_runtime.hpp"
 #include "swvr/numeric_keypad.hpp"
 #include "swvr/comfort.hpp"
+#include "swvr/input_visuals.hpp"
+#include "swvr/target_feedback.hpp"
 #include <array>
 #include <chrono>
 #include <memory>
@@ -19,9 +21,10 @@ public:
     // Call after eye image copies and before XrRuntime::end_frame. No-op for
     // nonrenderable frames or absent valid tracked hand segments. Exceptions
     // require cancelling the XR frame. Uses the first current GL 4.1+ context.
-    // Optional green 3 m diagnostic ray from the RIGHT index tip, along
+    // Optional 3 m ray from the pointing hand's index tip, along the
     // proximal-to-tip direction. Requires focus and fully tracked head/joints.
-    // It is not a hit marker or a claim about native interaction range.
+    // Grey by default; target_feedback() turns it green for a button the game
+    // will accept, or amber with a short reason while a click is blocked or held.
     void draw(const XrRuntimeFrame& frame,bool pointing_ray=false,unsigned pointing_hand=1);
     // Recolour both hand skeletons for `duration` (status feedback visible in
     // the headset, e.g. green = T-pose calibration accepted, red = rejected).
@@ -36,6 +39,11 @@ public:
     void menu_button(const PanelSnapshot&);
     void comfort(ComfortVisual);
     void diagnostics(std::vector<std::string> lines);
+    // Head-locked joystick rings and the wheel grip zone. A visual from another
+    // XR frame or reference space is drawn idle (sticks) or not at all (wheel).
+    void input_guides(bool sticks,std::array<StickVisual,2>,WheelGripVisual);
+    // Colours the pointing ray until the confirmation is 100 ms old.
+    void target_feedback(TargetFeedback);
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

@@ -1,6 +1,7 @@
 #pragma once
 #include "swvr/xr_runtime.hpp"
 #include "swvr/gesture_settings.hpp"
+#include "swvr/input_visuals.hpp"
 #include <optional>
 
 namespace swvr {
@@ -15,12 +16,14 @@ public:
     void reset() noexcept;
     bool using_hand() const noexcept {return closed_;}
     float rate() const noexcept {return rate_;}
+    StickVisual stick_visual()const noexcept{return visual_;}
 private:
     double update_impl(const XrRuntimeFrame&,const GestureSettings&,bool);
     ControlRecording* recorder_{};
     void clear_grip() noexcept;
     bool closed_{},snap_latched_{};
     float rate_{};
+    StickVisual visual_;
     std::optional<Vec3> neutral_;
     Quaternion axes_{};
     GestureHand movement_hand_{GestureHand::left};

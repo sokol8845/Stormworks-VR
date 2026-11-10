@@ -46,6 +46,8 @@ public:
     std::optional<int> update(const XrRuntimeFrame&);
     void set_preferred_hand(unsigned);
     void set_value(std::string);
+    // Text only: the button's id, geometry and input state are unchanged.
+    void set_label(int id,std::string label);
     const PanelSnapshot& snapshot() const noexcept {return state_;}
 private:
     std::optional<int> update_impl(const XrRuntimeFrame&);

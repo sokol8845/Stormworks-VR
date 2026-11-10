@@ -85,9 +85,9 @@ GestureSettings parse_gesture_settings(std::string_view text,GestureSettings s) 
             const auto eq=value.find('=');require(eq!=value.npos,"Expected key=value");
             const auto key=section+"."+std::string(trim(value.substr(0,eq)));value=trim(value.substr(eq+1));
             require(seen.insert(key).second,"Duplicate setting");
-            if(key=="joystick.forward_only"||key=="input.click_sound"||key=="turn.snap"||key=="comfort.head_fade"||key=="comfort.seated"){
+            if(key=="input.joystick_visual"||key=="steering.show_grip"||key=="joystick.forward_only"||key=="input.click_sound"||key=="turn.snap"||key=="comfort.head_fade"||key=="comfort.seated"){
                 require(value=="true"||value=="false","Expected true or false");
-                if(key=="joystick.forward_only")j.forward_only=value=="true";else if(key=="input.click_sound")s.input.click_sound=value=="true";else if(key=="turn.snap")s.turn.snap=value=="true";else if(key=="comfort.head_fade")s.comfort.head_fade=value=="true";else s.comfort.seated=value=="true";
+                if(key=="input.joystick_visual")s.input.joystick_visual=value=="true";else if(key=="steering.show_grip")s.steering.show_grip=value=="true";else if(key=="joystick.forward_only")j.forward_only=value=="true";else if(key=="input.click_sound")s.input.click_sound=value=="true";else if(key=="turn.snap")s.turn.snap=value=="true";else if(key=="comfort.head_fade")s.comfort.head_fade=value=="true";else s.comfort.seated=value=="true";
             }else if(key=="input.movement_mode"){
                 require(value=="fists"||value=="joystick","Unknown movement mode");s.input.movement_fists=value=="fists";
             }else if(key=="joystick.activation"){
@@ -124,9 +124,10 @@ std::string describe_gesture_settings(const GestureSettings& s) {
        <<" fist_open_wrist_ratio="<<a.fist_open_wrist_ratio<<" fist_close_knuckle_ratio="<<a.fist_close_knuckle_ratio<<" fist_open_knuckle_ratio="<<a.fist_open_knuckle_ratio
        <<" joystick_hand="<<(s.input.joystick_hand==GestureHand::left?"left":"right")<<" pointing_priority="<<(s.input.pointing_priority==GestureHand::left?"left":"right")<<" menu_distance_m="<<s.input.menu_distance_m
        <<" movement_mode="<<(s.input.movement_fists?"fists":"joystick")<<" dwell_ms="<<s.input.dwell_ms<<" menu_scale="<<s.input.menu_scale<<" click_sound="<<(s.input.click_sound?"true":"false")
+       <<" joystick_visual="<<(s.input.joystick_visual?"true":"false")
        <<" turn_speed_degrees="<<s.turn.speed_degrees<<" turn_dead_zone_m="<<s.turn.dead_zone_m<<" turn_full_deflection_m="<<s.turn.full_deflection_m<<" turn_snap="<<(s.turn.snap?"true":"false")<<" turn_snap_degrees="<<s.turn.snap_degrees
        <<" comfort_head_fade="<<(s.comfort.head_fade?"true":"false")<<" comfort_seated="<<(s.comfort.seated?"true":"false")<<" comfort_vignette_strength="<<s.comfort.vignette_strength<<" comfort_vignette_radius_degrees="<<s.comfort.vignette_radius_degrees;
-    out<<" steering_full_lock_degrees="<<s.steering.full_lock_degrees<<" steering_dead_zone_degrees="<<s.steering.dead_zone_degrees<<" steering_smoothing_ms="<<s.steering.smoothing_ms;
+    out<<" steering_full_lock_degrees="<<s.steering.full_lock_degrees<<" steering_dead_zone_degrees="<<s.steering.dead_zone_degrees<<" steering_smoothing_ms="<<s.steering.smoothing_ms<<" steering_show_grip="<<(s.steering.show_grip?"true":"false");
     return out.str();
 }
 std::string format_gesture_settings_ini(const GestureSettings& s){
